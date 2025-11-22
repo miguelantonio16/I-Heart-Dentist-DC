@@ -1,3 +1,20 @@
+# I Heart Dentist Dental Clinic
+
+This is the local copy of the I Heart Dentist Dental Clinic web application. Configure database and secrets before enabling production features.
+
+Links
+
+- GitHub: https://github.com/Jyle1005
+
+Quick notes
+
+- Place project in your XAMPP `htdocs` folder: `C:\xampp\htdocs\IHeartDentistDC`
+- Update `connection.php` with your DB credentials
+- Replace `api/client_secret.json` with credentials you control (the project currently uses a redacted placeholder)
+
+---
+
+_Created for user `Jyle1005`._
 # IHeartDentistDC 
 
 A comprehensive dental clinic management system designed for **I Heart Dentist Dental Clinic** (SDMC), featuring efficient appointment scheduling, patient management, and administrative tools.

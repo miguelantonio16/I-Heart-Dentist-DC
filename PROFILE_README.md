@@ -1,3 +1,18 @@
+# Simon Brian G. Pamintuan — GitHub Profile
+
+This is a simple profile README for the repository owner. Replace details below to personalize your GitHub profile.
+
+- GitHub: https://github.com/Jyle1005
+- Email: `your-email@example.com`
+
+Quick badges (replace `Jyle1005` if needed):
+
+```
+![Top Languages](https://github-readme-stats.vercel.app/api/top-langs/?username=Jyle1005&layout=compact&theme=tokyonight&hide_border=true)
+![Streak](https://github-readme-streak-stats.herokuapp.com/?user=Jyle1005&theme=tokyonight&hide_border=true)
+```
+
+Edit this file to add your bio, projects, and contact links.
 # I Heart Dentist Dental Clinic — Personal Repo
 
 Hi — this is a personalized README for the I Heart Dentist Dental Clinic repository. Replace the placeholders below with your name and links before publishing.
