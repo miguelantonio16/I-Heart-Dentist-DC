@@ -1,0 +1,210 @@
+#calendar {
+    background: #dae8f6; /* Clean, transparent background */
+    border-radius: 8px; /* Uniform 20px border radius */
+    border: 1px solid #6491bb !important;
+    font-family: 'Montserrat', sans-serif;
+    width: 100%; /* Full width within container */
+    max-width: 100%; /* Ensure it spans the container */
+    overflow: hidden; /* Prevent internal elements from protruding */
+    margin-bottom: 10px;;
+    height: 77%;
+}
+
+.calendar-wrapper {
+    width: 100%; /* Ensure wrapper takes full width */
+    max-width: 1200px; /* Cap width for large screens */
+    margin: 0 auto; /* Center within main-section */
+}
+
+.container {
+    padding-top: 15px; /* Tighter layout */
+}
+
+.fc-day, .fc-day-top, .fc-widget-content, .fc {
+    border: none !important;
+}
+
+/* Month Header (Toolbar) */
+.fc-toolbar {
+    background-color: #6491BB;
+    color: #ffffff;
+    padding: 6px;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+/* Toolbar Buttons */
+.fc-button {
+    background: #dae8f6 !important;
+    border: none !important;
+    border-radius: 8px !important; /* Slightly smaller radius for buttons */
+    color: #6491bb !important;
+    text-transform: uppercase;
+    font-size: 10px;
+    padding: 3px 6px;
+    transition: background-color 0.3s;
+}
+
+.fc-button:hover {
+    background-color: #CEDAE5 !important;
+}
+
+/* Days Header */
+.fc-head-container {
+    border: none !important;
+}
+
+.fc th.fc-day-header {
+    border: 1px solid #6491bb !important; 
+    background: #6491BB !important;
+    color: #ffffff !important;
+    padding: 4px;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+/* View Container (Day Grid) */
+.fc-view-container {
+    border-radius: 0 0 20px 20px; /* Rounded bottom corners, flat top */
+    overflow: hidden; /* Ensure day cells don't protrude */
+}
+
+/* Dates */
+.fc-day {
+    background: #ffffff;
+    border-radius: 0; /* Remove individual cell border radius */
+    transition: background 0.2s ease;
+    height: 60px; /* Reduced cell height */
+    line-height: 60px; /* Center text vertically */
+}
+.fc-day.fc-widget-content {
+    border: 1px solid #6491bb !important; /* Light gray border for days */
+}
+.fc-daygrid-day:hover {
+    background: rgba(127, 161, 195, 0.1);
+}
+
+/* Events */
+.fc-event {
+    font-size: 9px !important;
+    border-radius: 5px; /* Smaller radius for events to avoid clipping */
+    padding: 1px 3px;
+    border: none;
+    color: #ffffff !important;
+    line-height: 1.1;
+}
+
+/* Force today's cell to be yellow */
+.fc-day.fc-today.fc-state-highlight {
+    background-color: #dae8f6 !important;
+}
+
+/* Legend (unchanged) */
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 10px;
+    width: 100%;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.legend-item {
+    font-family: 'Montserrat', sans-serif;
+    border-radius: 20px;
+    text-align: center;
+    color: white;
+    width: 130px;
+    height: 40px;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: normal;
+}
+
+.bookings { background-color: #f5c447; }
+.appointments { background-color: #6bb663; }
+.no-service { background-color: #e23535; }
+.timeslot-taken { background-color: #f46e34; }
+.completed { background-color: grey; }
+
+/* Procedure Description (unchanged) */
+#procedure-description {
+    transition: all 0.3s ease;
+    padding: 10px;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+
+/* Select Dentist (unchanged) */
+.select-wrapper {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.form-dentist {
+    width: 100%;
+    padding: 7px;
+    padding-left: 20px;
+    font-size: 16px;
+    font-family: 'Montserrat', sans-serif;
+    border: 1px solid #303030;
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #131313;
+    outline: none;
+    transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+}
+
+.form-dentist:hover {
+    cursor: pointer;
+}
+
+.form-dentist option {
+    background-color: white;
+    color: black;
+    padding: 5px;
+}
+
+/* color guide */
+.color-guide-container {
+    font-family: sans-serif;
+}
+.color-guide-title {
+    margin-top: -3px;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+    color: #333;
+}
+
+.color-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-left: 50px;
+}
+
+.color-item {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.color-circle {
+    width: 50px;
+    height: 30px;
+    border-radius: 50px;
+}
+
+.color-label {
+    font-size: 15px;
+    color: #333;
+}

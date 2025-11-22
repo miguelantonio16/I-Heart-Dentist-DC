@@ -1,0 +1,289 @@
+@charset "utf-8";
+/****************************************LOADING SCREEN********************************************/
+.tooth-loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #2f396d 0%, #6482ad 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease-out;
+}
+
+.tooth-container {
+    position: relative;
+    width: 150px;
+    height: 180px;
+    animation: float 3s ease-in-out infinite;
+}
+
+.tooth {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    border-radius: 40px 40px 40px 40px;
+    top: 0;
+    left: 8px;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
+    overflow: hidden;
+    transform: rotate(3deg);
+}
+
+.tooth:after {
+    content: '';
+    position: absolute;
+    width: 40px;
+    height: 55px;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #6482ad;
+    border-radius: 20px 20px 0 0;
+}
+
+.tooth-shine-1 {
+    position: absolute;
+    width: 35%;
+    height: 25%;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    top: 10%;
+    left: 10%;
+    transform: rotate(-20deg);
+    z-index: 2;
+    filter: blur(1px);
+    animation: shine-pulse 3s infinite;
+}
+
+.tooth-shine-2 {
+    position: absolute;
+    width: 20%;
+    height: 15%;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    top: 30%;
+    left: 25%;
+    transform: rotate(10deg);
+    z-index: 2;
+    animation: shine-pulse 3s infinite 0.5s;
+}
+
+.tooth-shine-3 {
+    position: absolute;
+    width: 15%;
+    height: 10%;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    bottom: 20%;
+    right: 15%;
+    z-index: 2;
+    animation: shine-pulse 3s infinite 1s;
+}
+
+.toothbrush {
+    position: absolute;
+    width: 180px;
+    height: 40px;
+    left: -180px;
+    top: 60px;
+    display: flex;
+    animation: brush 3s infinite;
+}
+
+.brush-handle {
+    width: 120px;
+    height: 15px;
+    background: #3498db;
+    border-radius: 5px;
+}
+
+.brush-head {
+    width: 40px;
+    height: 15px;
+    background: #3498db;
+    border-radius: 2px;
+    position: relative;
+}
+
+.bristles {
+    position: absolute;
+    width: 40px;
+    height: 15px;
+    top: -10px;
+    display: flex;
+    justify-content: space-around;
+}
+
+.bristle {
+    width: 2px;
+    height: 10px;
+    background: white;
+}
+
+.toothpaste {
+    position: absolute;
+    width: 40px;
+    height: 8px;
+    background: linear-gradient(90deg, #e74c3c, #2ecc71, #3498db);
+    border-radius: 4px;
+    top: -15px;
+    opacity: 0.8;
+}
+
+.sparkles {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.sparkle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: white;
+    border-radius: 50%;
+    opacity: 0;
+}
+
+.sparkle:nth-child(1) {
+    top: 30%;
+    left: 20%;
+    animation: sparkle 2s infinite 0.3s;
+}
+
+.sparkle:nth-child(2) {
+    top: 50%;
+    left: 50%;
+    animation: sparkle 2s infinite 0.7s;
+}
+
+.sparkle:nth-child(3) {
+    top: 70%;
+    left: 30%;
+    animation: sparkle 2s infinite 1.1s;
+}
+
+.progress-container {
+    width: 200px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    margin-top: 40px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%; 
+    background: linear-gradient(90deg, #7fa1c3 0%, #6482ad 50%, #7fa1c3 100%);
+    background-size: 200% 100%;
+    border-radius: 3px;
+    transition: width 0.1s ease-out;
+}
+
+
+.loading-message {
+    color: white;
+    font-family: 'Montserrat', sans-serif;
+    margin-top: 30px;
+    font-size: 16px;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+    animation: textBounce 0.5s;
+}
+
+/* Animations */
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0) rotate(0deg);
+    }
+
+    50% {
+        transform: translateY(-30px) rotate(8deg);
+    }
+}
+
+@keyframes brush {
+    0% {
+        left: -180px;
+        transform: rotate(0deg);
+    }
+
+    25% {
+        left: -50px;
+        transform: rotate(10deg);
+    }
+
+    50% {
+        left: 30px;
+        transform: rotate(-5deg);
+    }
+
+    75% {
+        left: 100px;
+        transform: rotate(5deg);
+    }
+
+    100% {
+        left: 230px;
+        transform: rotate(0deg);
+    }
+}
+
+
+@keyframes sparkle {
+
+    0%,
+    100% {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1);
+        opacity: 0.7;
+    }
+}
+
+@keyframes shine-pulse {
+
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+@keyframes textBounce {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+@keyframes progressShine {
+    0% {
+        background-position: 0% center;
+    }
+
+    100% {
+        background-position: -200% center;
+    }
+}

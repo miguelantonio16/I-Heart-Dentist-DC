@@ -1,0 +1,341 @@
+@import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Architects+Daughter&family=Archivo+Black&family=Fredoka:wght@300..700&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Mulish:ital,wght@0,200..1000;1,200..1000&family=Oswald:wght@200..700&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+
+html, body {
+    background-color: #f5eded;
+    background-image: url("../Media/Background/background-light.png");
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    width: 100%;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    color: #000000;
+    overflow: auto;
+}
+
+a {
+    text-decoration: none; 
+    color: inherit;
+}
+    /* Centered actions and standardized role buttons */
+
+.login-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 120vh;
+    width: 100vw;
+    margin-top: -100px;
+    
+}
+/********* IHeartDentistDC Logo *********/
+.navbar {
+    background-color: transparent !important;
+    box-shadow: none;
+    position: absolute;
+    width: 100%; 
+    z-index: 1000;
+    top: -35px;
+    left: -10px;
+}
+.navbar-brand img {
+    height: auto; 
+    width: 50px;
+}
+
+/************ INSIDE CONTAINER ************/
+
+.inside-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-width: 3px;
+    border-radius: 15px;
+    background-color: white;
+    height: 53%;
+    width: 25%;
+    padding-top: 1.5em;
+    font-size: 16px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.215);
+    animation: transitionIn-Y-over 0.5s;
+}
+
+.login-header {
+    color: #6491bb;
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 600;
+    font-size: 30px;
+    margin-bottom: 30px;
+}
+.login-logo{
+    img{
+        width: 100px;
+        height: auto;
+        margin-top: -1em;
+    }
+}
+.login-header-admin {
+    color: #303030;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 20px;
+    text-align: center;
+    margin: 0;
+    margin-top: -20px;
+    margin-bottom: 2em;
+}
+/* Limit button styling to the login container to avoid global overrides */
+.inside-container button {
+    width: 100%;
+    max-width: 420px;
+    border-style: solid; 
+    border-color: rgb(23, 23, 23);
+    border-width: 2px;
+    border-radius: 10px;
+    background-color: #2f396d;
+    color: #f5eded;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    padding: 8px 0px 8px 0px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button:hover {
+    background-color: #f5eded; 
+    color: #2f396d; 
+}
+.inside2 {
+    display: flex;
+    flex-direction: row;
+    margin: 0;
+}
+/*************LOGIN****************/
+label{
+    font-size: 15px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    color: #6491bb;
+    margin-bottom: 8px;
+    text-align: left;
+}
+form {
+    display: flex;
+    flex-direction: column;
+    width: 85%;
+    margin: 0;
+}
+input {
+    font-size: 16px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    color: #000000;
+    border: 1px solid #6491bb; 
+    border-radius: 15px;
+    padding-left: 15px;
+    height: 45px;
+    background-color: transparent;
+    outline: none;
+    transition: background-color 0.2s ease;
+    margin-bottom: 15px;
+}
+input:focus {
+    border-color: #7C93C3;
+}
+input::placeholder {
+    color: #7C93C3;
+    opacity: 0.7; 
+}
+.google-logo {
+    width: auto;
+    height: 20px;
+    padding-right: 7px;
+}
+.google-auth {
+    font-family: 'Montserrat', sans-serif;
+    color:#000000;
+    text-align: center;
+    padding: 2px;
+    font-size: 15px;
+    font-weight: 400;
+    background-color: transparent;
+    border-radius: 50px;
+    width: 100%;
+    height: 38px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    border-style: solid;
+    border-color: #000000;
+    border-width: 2px;
+    margin: 0 auto;
+    margin-top: 10px;
+}
+.google-auth:hover{
+    background-color: #7C93C3;
+    color:#ffffff;
+    text-decoration: none;
+    border: none;
+}
+.or {
+    display: block;
+    text-align: center;
+    color: #000000;
+    font-size: 17px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    margin-top: 10px;
+}
+.login-btn {
+    border: none;
+    background-color: #84b6e4; 
+    color: white;
+    font-size: 18px;
+    font-weight: 300;
+    margin-top: 20px;
+    margin-bottom: 1em;
+    cursor: pointer;
+    transition: background-color 0.5s ease, color 0.2s ease;
+}
+.login-btn:hover {
+    background-color: #7fa1c3
+}
+.error-message{
+    color:rgb(255, 255, 255);
+    font-weight: 500;
+    background-color: rgb(249, 61, 61);
+    font-size: 12px;
+    padding: 5px;
+    text-align:center;
+    border-radius: 15px;
+}
+
+/************ OUTSIDE CONTAINER ************/
+.outside-container {
+    font-size: 17px;
+    margin-top: 30px;
+}
+.bottom-text{
+    font-size: 16px;
+    color: #303030;
+    font-weight: 400;
+    text-align: center;
+}
+.alr {
+    font-weight: 400;
+}
+.signup-link {
+    font-weight: 700;
+    color:#6491bb;
+    transition: color 0.2s ease, color 0.2s ease;
+}
+.signup-link:hover{
+    color:#7C93C3;
+    text-decoration: none;
+}
+
+/* Role button group (login actions) */
+.login-actions {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+}
+.role-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 420px;
+}
+.role-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background-color: #84b6e4;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+}
+.role-btn.admin { background-color: #5aa0d6; }
+.role-btn.dentist { background-color: #84b6e4; }
+.role-btn.patient { background-color: #7fa1c3; }
+
+@media (max-width: 600px) {
+    .inside-container { width: 90%; }
+    .role-buttons { flex-direction: column; gap: 8px; }
+    .role-btn { width: 100%; }
+}
+
+
+
+
+/***********
+body{
+    margin: 7%;
+    background-color: #F6F7FA;
+}
+.container{
+    width: 45%;
+    background-color: white;
+    border: 1px solid rgb(235, 235, 235);
+    border-radius: 8px;
+    margin: 0;
+    padding: 0;
+    box-shadow: 0 3px 5px 0 rgba(240, 240, 240, 0.3);
+    animation: transitionIn-Y-over 0.5s;
+
+}
+td{
+    text-align: center;
+
+}
+.header-text{
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+
+}
+
+.sub-text{
+    font-size: 15px;
+    color: rgb(138, 138, 138);
+}
+
+.form-label{
+    color: rgb(44, 44, 44);
+    text-align: left;
+    font-size: 14px;
+}
+.label-td{
+    text-align: left;
+    padding-top: 10px;
+}
+
+.hover-link1{
+    font-weight: bold;
+}
+
+
+.hover-link1:hover{
+    opacity: 0.8;
+    transition: 0.5s;
+
+
+}.login-btn{
+    /*margin-top: 15px;
+    margin-bottom: 15px;
+    width: 100%;
+}
+******/

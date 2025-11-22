@@ -1,0 +1,490 @@
+@import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Architects+Daughter&family=Archivo+Black&family=Fredoka:wght@300..700&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Mulish:ital,wght@0,200..1000;1,200..1000&family=Oswald:wght@200..700&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100%;
+    background-color: #f5eded;
+    background-image: url("../Media/Background/background-light.png");
+    background-repeat: no-repeat;
+    background-size: cover;
+    overflow-y: auto;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.small-checkbox {
+    width: 15px;
+    height: 15px;
+    margin-top: 12px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.signup-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 120vh;
+    width: 80%;
+    margin: auto;
+    margin-top: -5em;
+}
+
+.create-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 120vh;
+    width: 60%;
+    margin: auto;
+    margin-top: -3.5em;
+}
+
+/**********INSIDE CONTAINER************/
+.container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-width: 3px;
+    border-radius: 15px;
+    background-color: white;
+    width: 40%;
+    padding: 0;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.215);
+    animation: transitionIn-Y-over 0.5s;
+}
+
+table {
+    width: 85%;
+    border-collapse: collapse;
+    margin: 10px;
+    padding: 10px;
+}
+
+td {
+    text-align: center;
+}
+
+.header-text {
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: -1px;
+    margin-top: 1em;
+    margin-bottom: 10px;
+    color: #6491bb;
+}
+
+.sub-text {
+    font-size: 15px;
+    color: rgb(23, 23, 23);
+}
+
+/*************FORM****************/
+label {
+    font-size: 15px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    color: #6491bb;
+    margin-bottom: 8px;
+    text-align: left;
+}
+
+.label-td {
+    text-align: left;
+    padding-top: 10px;
+}
+
+input {
+    font-size: 16px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    color: #000000;
+    border: 1px solid #6491bb;
+    border-radius: 15px;
+    padding-left: 15px;
+    width: 100%;
+    height: 45px;
+    background-color: transparent;
+    outline: none;
+    transition: background-color 0.2s ease;
+    margin-bottom: 15px;
+}
+
+input:focus {
+    border-color: #7C93C3;
+}
+
+input::placeholder {
+    color: #6b6b6b;
+    opacity: 0.7;
+}
+
+.name-container,
+.address-container,
+.city-province-container {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.city-province-container {
+    margin-top: -10px;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 150px;
+    /* Prevents inputs from being too small */
+}
+
+.input-group label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+@media (max-width: 768px) {
+
+    .name-container,
+    .address-container,
+    .city-province-container {
+        flex-direction: column;
+        /* Stacks inputs vertically on smaller screens */
+    }
+}
+
+/****************BUTTONS***************/
+.login-btn {
+    border: none;
+    background-color: #84b6e4;
+    color: white;
+    font-size: 18px;
+    font-weight: 300;
+    margin-top: 20px;
+    cursor: pointer;
+    transition: background-color 0.5s ease, color 0.2s ease;
+}
+
+.login-btn:hover {
+    background-color: #7fa1c3;
+}
+
+.signup-btn {
+    border: none;
+    background-color: #39a149;
+    color: white;
+    font-size: 18px;
+    font-weight: 300;
+    margin-top: 20px;
+    cursor: pointer;
+    transition: background-color 0.5s ease, color 0.2s ease;
+}
+
+.signup-btn:hover {
+    background-color: #78d386;
+}
+
+.clear-btn {
+    border: none;
+    background-color: #f05a5a;
+    color: white;
+    font-size: 18px;
+    font-weight: 300;
+    margin-top: 20px;
+    cursor: pointer;
+    transition: background-color 0.5s ease, color 0.2s ease;
+}
+
+.clear-btn:hover {
+    background-color: #f66969;
+}
+
+.bottom-text {
+    font-size: 15px;
+    color: #303030;
+    font-weight: 400;
+}
+
+.hover-link1 {
+    font-size: 15px;
+    font-weight: bold;
+    color: #6491bb;
+    transition: color 0.5s ease, color 0.2s ease;
+}
+
+.hover-link1:hover {
+    transition: 0.5s;
+    color: #7fa1c3;
+}
+
+.login-link {
+    color: #6491bb;
+    font-weight: 800;
+    transition: color 0.2s ease, color 0.2s ease;
+}
+
+.login-link:hover {
+    color: #7C93C3;
+    text-decoration: none;
+}
+
+
+/************ERROR*************/
+.error-message {
+    color: rgb(255, 255, 255);
+    font-weight: 500;
+    background-color: rgb(249, 61, 61);
+    font-size: 12px;
+    padding: 5px;
+    text-align: center;
+    border-radius: 15px;
+}
+
+.alr {
+    font-weight: 400;
+}
+
+
+
+
+
+/**************CREATE ACCOUNT FORM*****************/
+#country {
+    font-size: 16px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    color: #000000;
+    border: 1px solid #6491bb;
+    border-radius: 15px;
+    border-width: 2px;
+    height: 45px;
+    background-color: transparent;
+    outline: none;
+    transition: background-color 0.2s ease;
+    margin-bottom: 15px;
+    width: 100%;
+    padding: 8px;
+}
+
+#country:focus {
+    border-color: #7C93C3;
+}
+
+#country::placeholder {
+    color: #6b6b6b;
+    opacity: 0.7;
+}
+/* General styling for Select2 dropdown */
+.select2-container--default .select2-selection--single {
+    font-size: 16px !important;
+    font-family: 'Montserrat', sans-serif !important;
+    font-weight: 400 !important;
+    color: #000000 !important;
+    border: 1px solid #6491bb !important;
+    border-radius: 15px !important;
+    height: 45px !important;
+    background-color: white !important;
+    outline: none !important;
+    transition: background-color 0.2s ease !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important; 
+    padding-left: 8px;
+    padding-right: 40px !important; 
+    position: relative !important;
+}
+
+/* Placeholder styling */
+.select2-container--default .select2-selection--single .select2-selection__placeholder {
+    color: #6b6b6b !important;
+    opacity: 0.7;
+}
+
+/* Fix dropdown arrow positioning */
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    position: absolute !important;
+    right: 15px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    height: auto !important;
+}
+
+/* Adjust arrow size and color */
+.select2-container--default .select2-selection--single .select2-selection__arrow b {
+    border-width: 7px 6px 0 6px !important;
+    border-color: #6491bb transparent transparent transparent !important;
+}
+
+/* Dropdown panel styling */
+.select2-container--default .select2-dropdown {
+    background-color: #ffffff !important;
+    border: 1px solid #6491bb !important;
+    border-radius: 15px !important;
+    font-size: 16px;
+}
+
+/* Style dropdown options */
+.select2-results__option {
+    font-size: 16px !important;
+    font-family: 'Montserrat', sans-serif !important;
+    color: #000 !important;
+    padding: 10px !important;
+}
+
+/* Hover effect for options */
+.select2-results__option--highlighted,
+.select2-container--default .select2-results__option[aria-selected="true"] {
+    background-color: #7FA1C3 !important;
+    color: white !important;
+}
+
+/* Search field inside the dropdown */
+.select2-container--default .select2-search--dropdown .select2-search__field {
+    font-size: 16px;
+    padding-left: 40px !important; 
+    border: 1px solid #6491bb;
+    border-radius: 10px;
+}
+
+.phone-container {
+    display: flex;
+    align-items: center;
+}
+
+#countryCode {
+    width: 50px;
+    text-align: center;
+    padding: 8px;
+    margin-right: 5px;
+}
+
+#country-label,
+#tele-label {
+    margin-bottom: 8px;
+    display: block;
+}
+
+.certify-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.small-checkbox {
+    width: 20px;
+    height: 20px;
+    appearance: none;
+    border: 1px solid #6491bb;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    background-color: white;
+    margin: 0;
+}
+
+.small-checkbox:checked {
+    background-color: #39a149;
+    border-color: #39a149;
+}
+
+.small-checkbox:checked::before {
+    content: "✔";
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.certify {
+    color: #303030;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    margin-left: 5px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/***************PASSWORD CHECKER********************/
+.password-popup {
+    display: none;
+    background: #ffffff;
+    border: 1px solid #6491bb;
+    padding: 10px;
+    position: absolute;
+    width: 250px;
+    font-size: 12px;
+    border-radius: 5px;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+}
+
+.password-popup p {
+    margin: 5px 0;
+    font-weight: bold;
+    color: #f93d3d;
+}
+
+.password-popup p.valid {
+    color: #39a149;
+}
+
+#newpassword,
+#cpassword {
+    border: 1px solid #6491bb;
+    transition: border-color 0.3s;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.error-message {
+    margin-top: 5px;
+    font-weight: 500;
+    color: white;
+    font-size: 12px;
+    display: none; /* Initially hidden */
+}
+
+/******/
+.password-toggle-icon {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    cursor: pointer;
+  }
+  
+  .password-toggle-icon i {
+    font-size: 18px;
+    line-height: 1;
+    color: #333;
+    transition: color 0.3s ease-in-out;
+    margin-bottom: 20px;
+  }
+  
+  .password-toggle-icon i:hover {
+    color: #000;
+  }
+
+  .password-container {
+    position: relative;
+    width: 100%;
+  }
+  
+  .password-container input {
+    width: 100%;
+    padding-right: 40px; /* Space for the icon */
+    box-sizing: border-box;
+  }

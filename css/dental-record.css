@@ -1,0 +1,157 @@
+.header-button{
+  text-align: center;
+  margin-left: 0em;
+  margin-top: 2em;
+  font-weight: 500;
+  font-size: large;
+}
+
+.header-details {
+  margin-top: 2em;
+  margin-left: 10em;
+  width: 100%;
+  color: #0056b3;
+}
+
+.input1 {
+  margin-left: 4em;
+}
+
+.input2{
+  margin-left: 1.4em;
+}
+
+.input3{
+  margin-left: 5.2em;
+}
+
+.input4 {
+  margin-left: 4em;
+}
+
+.input5{
+  margin-left: 5.65em;
+}
+
+.parent{
+  display: flex;
+}
+
+.no-linebreak{
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+}
+
+.main{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+}
+
+.dental-charting{
+    display: flex;
+    flex-direction: row;
+    margin: 0px;
+  }
+  
+  .chart{
+    background: #fff;
+    text-align: center;
+  }
+  
+  .codes{
+    border: 1px solid #cacaca;
+  }
+
+  .code-style{
+    color: #0056b3;
+  }
+  
+  .input {
+      height: 30px;
+      width: 100px;
+      margin: 5px 0;
+    }
+    
+    .input:focus {
+      outline: none;
+      border: 2px solid #2199e8;
+    }
+  
+  .row {
+      display: flex;
+  }
+
+  .first{
+    display: flex;
+    justify-content: center;
+  }
+
+  .second{
+    margin-left: 5em;
+  }
+
+  
+  .columns {
+      margin: 1em;
+  }
+
+  .dental-form {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 1000px;
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    margin-left: 7em;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    background-color: #f9f9f9;
+}
+
+.haha {
+    margin-right: 2em;
+    width: 300px;
+}
+.legend {
+    display: flex;
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #333;
+}
+
+.section-div{
+    display: flex;
+}
+
+.section {
+    margin-bottom: 15px;
+    margin-right: 40px;
+}
+
+.section h4 {
+    font-size: 16px;
+    margin-bottom: 10px;
+    color: #0056b3;
+}
+
+label {
+    font-size: 14px;
+}
+
+button {
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 30px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
