@@ -18,9 +18,11 @@ Developed as a Capstone project for **De La Salle University – Dasmariñas**, 
 The project utilizes the **WAMP stack** to manage the server-side logic and database interactions. The backend is structured to handle concurrent user requests efficiently while maintaining data integrity through a **RESTful API**.
 
 ## 👤 Developer
-**Miguel Antonio Barcala, **
+**Miguel Antonio Barcala**
+**, **
 **Grycen Jyle Magahis**
 IT Student | De La Salle University – Dasmariñas
 Specializing in Backend Development and System Architecture
+
 
 
