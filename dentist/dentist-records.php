@@ -74,13 +74,7 @@ if (isset($_GET['action'])) {
         $medical_result = $stmt->get_result();
         $medical_history = $medical_result->fetch_assoc();
         
-        // Fetch informed consent
-        $consent_sql = "SELECT * FROM informed_consent WHERE email = ? ORDER BY consent_date DESC LIMIT 1";
-        $stmt = $database->prepare($consent_sql);
-        $stmt->bind_param("s", $patient['pemail']);
-        $stmt->execute();
-        $consent_result = $stmt->get_result();
-        $informed_consent = $consent_result->fetch_assoc();
+        // Informed consent removed from system; no longer fetched
     }
 }
 ?>
@@ -94,6 +88,7 @@ if (isset($_GET['action'])) {
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Patient Records - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -505,8 +500,10 @@ if (isset($_GET['action'])) {
     </style>
 </head>
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -655,54 +652,7 @@ if (isset($_GET['action'])) {
                             <?php endif; ?>
                         </div>
                         
-                        <div class="record-section">
-                            <h3>Informed Consent</h3>
-                            <?php if ($informed_consent): ?>
-                                <div class="record-grid">
-                                    <div class="record-label">Consent Date:</div>
-                                    <div class="record-value"><?php echo $informed_consent['consent_date']; ?></div>
-                                    
-                                    <div class="record-label">Treatment to be Done:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_treatment_to_be_done'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Drugs/Medications:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_drugs_medications'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Changes to Treatment Plan:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_changes_treatment_plan'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Radiographs (X-rays):</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_radiograph'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Removal of Teeth:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_removal_teeth'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Crowns/Bridges:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_crowns_bridges'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Endodontics (Root Canal):</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_endodontics'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Periodontal Disease Treatment:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_periodontal_disease'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Fillings:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_fillings'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                    
-                                    <div class="record-label">Dentures:</div>
-                                    <div class="record-value"><?php echo $informed_consent['initial_dentures'] == 'y' ? 'Agreed' : 'Not agreed'; ?></div>
-                                </div>
-                                
-                                <?php if ($informed_consent['id_signature_path']): ?>
-                                    <div class="signature-container">
-                                        <div class="record-label">Patient Signature:</div>
-                                        <img src="<?php echo $informed_consent['id_signature_path']; ?>" alt="Patient Signature" class="signature-image">
-                                    </div>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                <p>No informed consent recorded for this patient.</p>
-                            <?php endif; ?>
-                        </div>
+                        <!-- Informed Consent section removed -->
                         
                         <div class="record-section">
                             <h3>Dental Records</h3>
@@ -746,14 +696,16 @@ if (isset($_GET['action'])) {
                         <?php
                         if ($_GET) {
                             $keyword = $_GET["search"] ?? '';
-                            $sqlmain = "SELECT DISTINCT p.* FROM patient p 
+                            $sqlmain = "SELECT DISTINCT p.*, b.name AS branch_name FROM patient p 
                                 JOIN appointment a ON p.pid = a.pid 
+                                LEFT JOIN branches b ON p.branch_id = b.id 
                                 WHERE (p.pemail='$keyword' OR p.pname='$keyword' OR p.pname LIKE '$keyword%' OR p.pname LIKE '%$keyword' OR p.pname LIKE '%$keyword%') 
                                 AND a.docid = $docid AND p.status = 'active' 
                                 ORDER BY p.pname " . ($currentSort === 'oldest' ? 'DESC' : 'ASC');
                         } else {
-                            $sqlmain = "SELECT DISTINCT p.* FROM patient p 
+                            $sqlmain = "SELECT DISTINCT p.*, b.name AS branch_name FROM patient p 
                                 JOIN appointment a ON p.pid = a.pid 
+                                LEFT JOIN branches b ON p.branch_id = b.id 
                                 WHERE a.docid = $docid AND p.status = 'active' 
                                 ORDER BY p.pname " . ($currentSort === 'oldest' ? 'DESC' : 'ASC');
                         }
@@ -770,6 +722,7 @@ if (isset($_GET['action'])) {
                                             <th>Name</th>
                                             <th>Email</th>
                                             <th>Contact</th>
+                                            <th>Branch</th>
                                             <th>Date of Birth</th>
                                             <th>Last Appointment</th>
                                             <th>Actions</th>
@@ -782,6 +735,7 @@ if (isset($_GET['action'])) {
                                             $email = $row["pemail"];
                                             $dob = $row["pdob"];
                                             $tel = $row["ptel"];
+                                            $branch_name = isset($row["branch_name"]) && $row["branch_name"] !== null && $row["branch_name"] !== '' ? $row["branch_name"] : '-';
                                             
                                             // Get last appointment date
                                             $appt_sql = "SELECT appodate FROM appointment 
@@ -794,18 +748,25 @@ if (isset($_GET['action'])) {
                                             <tr>
                                                 <td>
                                                     <?php
-                                                    $profile_pic = !empty($row["profile_pic"]) ? "../" . $row["profile_pic"] : "../Media/Icon/Blue/profile.png";
+                                                    $profilePicRaw = isset($row["profile_pic"]) ? trim($row["profile_pic"]) : '';
+                                                    if ($profilePicRaw === '' || $profilePicRaw === 'default.jpg' || $profilePicRaw === 'default.png') {
+                                                        $profile_pic = "../Media/Icon/Blue/profile.png";
+                                                    } else {
+                                                        $cleanPath = ltrim($profilePicRaw, '/');
+                                                        $profile_pic = "../" . $cleanPath;
+                                                    }
                                                     ?>
                                                     <img src="<?php echo $profile_pic; ?>" alt="<?php echo $name; ?>" class="profile-img-small">
                                                 </td>
                                                 <td><div class="cell-text"><?php echo $name; ?></div></td>
                                                 <td><div class="cell-text"><?php echo $email; ?></div></td>
                                                 <td><div class="cell-text"><?php echo $tel; ?></div></td>
+                                                <td><div class="cell-text"><?php echo $branch_name; ?></div></td>
                                                 <td><div class="cell-text"><?php echo $dob; ?></div></td>
                                                 <td><div class="cell-text"><?php echo $last_appt_date; ?></div></td>
                                                 <td>
                                                     <div class="action-buttons">
-                                                        <a href="dentist-records.php?action=view&id=<?php echo $pid; ?>" class="action-btn view-btn">View Records</a>
+                                                        <a href="#" onclick="openAppointmentHistory(<?php echo $pid; ?>, '<?php echo htmlspecialchars($name, ENT_QUOTES); ?>')" class="action-btn view-btn">View Records</a>
                                                         <a href="#" onclick="openDentalRecords(<?php echo $pid; ?>)" class="action-btn edit-btn">Dental Records</a>
                                                         <a href="#" onclick="openAddDentalRecord(<?php echo $pid; ?>)" class="action-btn add-btn">Add Record</a>
                                                     </div>
@@ -926,33 +887,45 @@ if (isset($_GET['action'])) {
                             <?php
                             $upcomingAppointments = $database->query("
                                 SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time,
-                                    patient.pname as patient_name
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
+                                    a.appoid,
+                                    p.pname AS patient_name,
+                                    b.name AS branch_name,
+                                    a.appodate,
+                                    a.appointment_time,
+                                    COALESCE(
+                                        CONCAT_WS(', ',
+                                            NULLIF(pr.procedure_name, ''),
+                                            NULLIF(GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '), '')
+                                        ),
+                                        pr.procedure_name
+                                    ) AS procedures
+                                FROM appointment a
+                                INNER JOIN patient p ON a.pid = p.pid
+                                LEFT JOIN branches b ON b.id = a.branch_id
+                                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
                                 WHERE
-                                    appointment.docid = '$docid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
+                                    a.docid = '$docid'
+                                    AND a.status IN ('appointment', 'booking')
+                                    AND a.appodate >= '$today'
+                                GROUP BY a.appoid, p.pname, b.name, a.appodate, a.appointment_time, pr.procedure_name
+                                ORDER BY a.appodate ASC, a.appointment_time ASC
                                 LIMIT 3;
                             ");
 
                             if ($upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedures'] ?? '');
+                                    $patient = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $dateLine = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    $suffix = $branch ? (' - ' . $branch) : '';
+                                    echo '<div class="appointment-item">'
+                                        . '<h4 class="appointment-type">' . ($proc !== '' ? $proc : 'Appointment') . '</h4>'
+                                        . '<p class="appointment-date">With ' . $patient . '</p>'
+                                        . '<p class="appointment-date">' . $dateLine . $suffix . '</p>'
+                                    . '</div>';
                                 }
                             } else {
                                 echo '<div class="no-appointments">
@@ -967,6 +940,19 @@ if (isset($_GET['action'])) {
         </div>
     </div>
     
+    <!-- Appointment History Popup (View Records) -->
+    <div id="appointmentHistoryPopup" class="modal-container">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <div class="modal-header">
+                <h2 id="appointmentHistoryTitle">Appointment History</h2>
+            </div>
+            <div class="modal-body" id="appointmentHistoryContent">
+                <!-- Appointment history content will be loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+
     <!-- Dental Records Popup -->
     <div id="dentalRecordsPopup" class="modal-container">
         <div class="modal-content">
@@ -1015,6 +1001,26 @@ if (isset($_GET['action'])) {
     </div>
 
     <script>
+    function openAppointmentHistory(pid, name) {
+        document.getElementById('appointmentHistoryContent').innerHTML = '<p style="text-align:center; padding:20px;">Loading appointment history...</p>';
+        document.getElementById('appointmentHistoryTitle').textContent = 'Appointment History - ' + name;
+        document.getElementById('appointmentHistoryPopup').style.display = 'flex';
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'get_appointment_history.php?pid=' + encodeURIComponent(pid), true);
+        xhr.onload = function() {
+            if (this.status === 200) {
+                document.getElementById('appointmentHistoryContent').innerHTML = this.responseText;
+            } else {
+                document.getElementById('appointmentHistoryContent').innerHTML = '<p style="text-align:center; padding:20px; color:#f44336;">Error loading appointment history.</p>';
+            }
+        };
+        xhr.onerror = function() {
+            document.getElementById('appointmentHistoryContent').innerHTML = '<p style="text-align:center; padding:20px; color:#f44336;">Network error. Please try again.</p>';
+        };
+        xhr.send();
+    }
+
     function openDentalRecords(pid) {
         document.getElementById('dentalRecordsContent').innerHTML = '<p style="text-align: center; padding: 20px;">Loading records...</p>';
         document.getElementById('dentalRecordsPopup').style.display = 'flex';
@@ -1094,6 +1100,34 @@ if (isset($_GET['action'])) {
         
         // Set current date as default for new records
         document.getElementById('recordDate').valueAsDate = new Date();
+    });
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
     });
     </script>
 </body>

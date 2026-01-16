@@ -1,0 +1,36 @@
+# Shared Hosting Hardened .htaccess Template
+# Copy to .htaccess in public_html and adjust CPANELUSER and paths.
+
+Options -Indexes
+
+# Force HTTPS
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Basic security headers (add more via server config if allowed)
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>
+
+# Disable executing PHP in uploads (adjust path)
+<Directory "uploads">
+    <FilesMatch "\.(php|php8|phtml)$">
+        Require all denied
+    </FilesMatch>
+</Directory>
+
+# Error handling
+php_flag display_errors Off
+php_value error_log /home/CPANELUSER/logs/php-error.log
+
+# Cache static assets (adjust max-age as needed)
+<FilesMatch "\.(css|js|png|jpg|jpeg|gif|svg|webp|ico)$">
+    <IfModule mod_expires.c>
+        ExpiresActive On
+        ExpiresDefault "access plus 7 days"
+    </IfModule>
+</FilesMatch>

@@ -23,23 +23,23 @@ if (!isset($_SESSION['user'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
     // Sanitize and validate input data
     $event_name = trim($_POST['event_name']);
-    $procedure = intval($_POST['procedure']);
+    $procedure = isset($_POST['procedure']) ? intval($_POST['procedure']) : 0;
     $patient_name = intval($_POST['patient_name']);
     $appointment_date = $_POST['appointment_date'];
     $appointment_time = $_POST['appointment_time'];
     $docid = intval($_POST['docid']);
 
     // Validate inputs
-    if (empty($event_name) || $procedure <= 0 || $patient_name <= 0 || 
+    if (empty($event_name) || $patient_name <= 0 || 
         empty($appointment_date) || empty($appointment_time) || $docid <= 0) {
-        echo json_encode(['status' => false, 'msg' => 'All fields are required.']);
+        echo json_encode(['status' => false, 'msg' => 'Required fields are missing.']);
         exit;
     }
 
-    // Check if the time slot is available
+    // Check if the time slot is available (include pending reservations to prevent double-holds)
     $checkQuery = $con->prepare("SELECT appoid FROM appointment 
                                 WHERE docid = ? AND appodate = ? AND appointment_time = ?
-                                AND status IN ('appointment', 'booking')");
+                                AND status IN ('pending_reservation','booking','appointment')");
     $checkQuery->bind_param("iss", $docid, $appointment_date, $appointment_time);
     $checkQuery->execute();
     $checkResult = $checkQuery->get_result();
@@ -75,10 +75,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
     }
 
     // Insert new appointment including branch_id
-    $query = $con->prepare("INSERT INTO appointment 
+    if ($procedure > 0) {
+        $query = $con->prepare("INSERT INTO appointment 
                            (pid, docid, appodate, appointment_time, procedure_id, event_name, branch_id, status) 
                            VALUES (?, ?, ?, ?, ?, ?, ?, 'appointment')");
-    $query->bind_param("iisssis", $patient_name, $docid, $appointment_date, $appointment_time, $procedure, $event_name, $branch_id);
+        $query->bind_param("iisssis", $patient_name, $docid, $appointment_date, $appointment_time, $procedure, $event_name, $branch_id);
+    } else {
+        // Insert with NULL procedure_id since admin will assign procedure later
+        $query = $con->prepare("INSERT INTO appointment 
+                           (pid, docid, appodate, appointment_time, procedure_id, event_name, branch_id, status) 
+                           VALUES (?, ?, ?, ?, NULL, ?, ?, 'appointment')");
+        $query->bind_param("iisssi", $patient_name, $docid, $appointment_date, $appointment_time, $event_name, $branch_id);
+    }
 
     if ($query->execute()) {
         $appoid = $con->insert_id;
@@ -90,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
         JOIN patient p ON a.pid = p.pid
         JOIN doctor d ON a.docid = d.docid
         LEFT JOIN branches b ON d.branch_id = b.id
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
+        LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
         WHERE a.appoid = ?
     ");
         $detailsQuery->bind_param("i", $appoid);
@@ -116,11 +124,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
         // Format the date for display
         $formattedDate = date('F j, Y', strtotime($appointment_date));
         
-        // Create notification for patient
+        // Create notification for patient. If procedure is not set, do not include it here.
         $notificationTitle = "New Appointment Confirmed";
-        $notificationMessage = "Your appointment for " . $appointment['procedure_name'] . " with Dr. " . 
-                             $appointment['docname'] . " on " . $formattedDate . " at " . 
-                             $appointment_time . " has been confirmed.";
+        if (!empty($appointment['procedure_name'])) {
+            $notificationMessage = "Your appointment for " . $appointment['procedure_name'] . " with Dr. " . 
+                                 $appointment['docname'] . " on " . $formattedDate . " at " . 
+                                 $appointment_time . " has been confirmed.";
+        } else {
+            $notificationMessage = "Your appointment with Dr. " . $appointment['docname'] . " on " . $formattedDate . " at " . $appointment_time . " has been confirmed. Procedure will be assigned by the clinic.";
+        }
         
         $notificationQuery = $con->prepare("
             INSERT INTO notifications (user_id, user_type, title, message, related_id, related_type, created_at, is_read)
@@ -160,6 +172,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
                 ]
             ];
             $mail->Subject = 'New Appointment Confirmation';
+            // Build email body; omit procedure section if not set
+            $procedure_html = '';
+            if (!empty($appointment['procedure_name'])) {
+                $procedure_html = "<p><strong>Procedure:</strong> {$appointment['procedure_name']}</p>";
+            } else {
+                $procedure_html = "<p><strong>Procedure:</strong> To be assigned by the clinic</p>";
+            }
+
             $mail->Body = "
                 <h3>New Appointment Confirmation</h3>
                 <p>Your appointment has been successfully scheduled with I Heart Dentist Dental Clinic.</p>
@@ -169,11 +189,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['event_name'])) {
                 <p><strong>Dentist:</strong> Dr. {$appointment['docname']}</p>
                 <p><strong>Date:</strong> $formattedDate</p>
                 <p><strong>Time:</strong> $appointment_time</p>
-                <p><strong>Procedure:</strong> {$appointment['procedure_name']}</p>
-                
+                {$procedure_html}
                 <p>Please arrive 10 minutes before your scheduled time.</p>
                 <p>If you need to reschedule or cancel, please contact us at least 24 hours in advance.</p>
-                
                 <p>Thank you for choosing I Heart Dentist Dental Clinic!</p>
             ";
 

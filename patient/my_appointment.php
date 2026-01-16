@@ -30,11 +30,7 @@ $doctorrow = $database->query("select * from doctor where status='active';");
 $appointmentrow = $database->query("select * from appointment where status='booking' AND pid='$userid';");
 $schedulerow = $database->query("select * from appointment where status='appointment' AND pid='$userid';");
 
-// Load branches for filter
-$branchesResult = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
-
-// Branch filter via GET
-$selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : 0;
+// Branch filter removed per request (dropdown UI removed)
 
 // Pagination
 $results_per_page = 10;
@@ -54,22 +50,25 @@ $search = "";
 
 // Main query with current database structure
 // REPLACE YOUR $sqlmain WITH THIS:
-$sqlmain = "SELECT 
+$sqlmain = "SELECT DISTINCT
             appointment.appoid, 
-            procedures.procedure_name, 
-            procedures.price as procedure_price, /* FETCH CURRENT PRICE */
+            appointment.procedure_id,
             doctor.docname, 
             appointment.appodate, 
             appointment.appointment_time,
             appointment.status,
-            appointment.payment_status, 
+            appointment.payment_status,
+            appointment.reservation_paid,
+            appointment.payment_method,
             appointment.total_amount, 
             doctor.photo,
             b.name AS branch_name
         FROM appointment
         INNER JOIN doctor ON appointment.docid = doctor.docid
-        INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-        LEFT JOIN branches b ON doctor.branch_id = b.id
+        LEFT JOIN branches b ON appointment.branch_id = b.id
+        LEFT JOIN procedures pmain ON appointment.procedure_id = pmain.procedure_id
+        LEFT JOIN appointment_procedures ap ON appointment.appoid = ap.appointment_id
+        LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
         WHERE appointment.pid = '$userid' 
         AND appointment.status IN ('appointment', 'completed')";
 if ($_POST) {
@@ -80,16 +79,15 @@ if ($_POST) {
 }
 
 if (isset($_GET['search'])) {
-    $search = $_GET['search'];
-    $sqlmain .= " AND (doctor.docname LIKE '%$search%' OR procedures.procedure_name LIKE '%$search%')";
+    $search = $database->real_escape_string($_GET['search']);
+    $sqlmain .= " AND (
+        doctor.docname LIKE '%$search%'
+        OR pmain.procedure_name LIKE '%$search%'
+        OR pr2.procedure_name LIKE '%$search%'
+    )";
 }
 
-// Apply branch filter
-if ($selected_branch > 0) {
-    $sqlmain .= " AND doctor.branch_id = $selected_branch";
-}
-
-$sqlmain .= " ORDER BY appointment.appodate ASC LIMIT $start_from, $results_per_page";
+$sqlmain .= " ORDER BY appointment.appodate DESC, appointment.appointment_time DESC LIMIT $start_from, $results_per_page";
 $result = $database->query($sqlmain);
 
 // Count query for pagination
@@ -135,6 +133,8 @@ if (isset($_GET['status'])) {
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/overrides.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>My Appointment - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -185,6 +185,8 @@ if (isset($_GET['status'])) {
             font-size: 12px;
             font-weight: bold;
             text-transform: uppercase;
+            white-space: nowrap;
+            display: inline-block;
         }
         .status-completed {
             background-color: #d4edda;
@@ -214,12 +216,27 @@ if (isset($_GET['status'])) {
         .remove-btn {
             width: 122px;
         }
+
+        /* Mobile fixes: prevent overlapping date/time and badges */
+        @media (max-width: 992px) {
+            .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .table th, .table td { white-space: normal; }
+            /* Ensure Date & Time column has enough room and wraps */
+            .table th:nth-child(5), .table td:nth-child(5) { min-width: 140px; }
+            .table td:nth-child(5) .cell-text { display: block; }
+            /* Keep status badge from crowding other columns */
+            .table td:nth-child(6) .status-badge { display: inline-block; margin-top: 4px; }
+            /* Avoid cramped action buttons */
+            .table td:nth-child(7) { min-width: 160px; }
+        }
     </style>
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+            <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -227,7 +244,8 @@ if (isset($_GET['status'])) {
             <div class="user-profile">
                 <div class="profile-image">
                     <?php
-                    $profile_pic = isset($userfetch['profile_pic']) ? $userfetch['profile_pic'] : '../Media/Icon/Blue/profile.png';
+                    include_once __DIR__ . '/../inc/get_profile_pic.php';
+                    $profile_pic = get_profile_pic($userfetch);
                     ?>
                     <img src="../<?php echo $profile_pic; ?>" alt="Profile" class="profile-img">
                 </div>
@@ -311,18 +329,7 @@ if (isset($_GET['status'])) {
                                 <?php endif; ?>
                             </form>
 
-                            <!-- Branch filter (GET) -->
-                            <form action="" method="GET" style="display:inline-block; margin-left:12px;">
-                                <input type="hidden" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
-                                <select name="branch_id" onchange="this.form.submit()" class="input-text" style="padding:6px; margin-left:8px;">
-                                    <option value="">All Branches</option>
-                                    <?php if ($branchesResult && $branchesResult->num_rows > 0): ?>
-                                        <?php while ($b = $branchesResult->fetch_assoc()): ?>
-                                            <option value="<?php echo $b['id']; ?>" <?php echo ($selected_branch == $b['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($b['name']); ?></option>
-                                        <?php endwhile; ?>
-                                    <?php endif; ?>
-                                </select>
-                            </form>
+                            <!-- Branch filter dropdown removed -->
                         </div>
                     </div>
 
@@ -347,8 +354,14 @@ if (isset($_GET['status'])) {
                                         
                                         // Determine status badge
                                         if ($status == 'completed') {
-                                            $statusClass = 'status-completed';
-                                            $statusText = 'Completed';
+                                            // Show unpaid state distinctly if bill not yet settled
+                                            if (isset($row['payment_status']) && strtolower($row['payment_status']) === 'paid') {
+                                                $statusClass = 'status-completed';
+                                                $statusText = 'Completed';
+                                            } else {
+                                                $statusClass = 'status-upcoming';
+                                                $statusText = 'Awaiting Payment';
+                                            }
                                         } elseif ($appodate < $today) {
                                             $statusClass = 'status-completed';
                                             $statusText = 'Completed';
@@ -361,10 +374,15 @@ if (isset($_GET['status'])) {
                                             <!-- Profile Column -->
                                             <td>
                                                 <?php
+                                                $photo = "../Media/Icon/Blue/dentist.png";
                                                 if (!empty($row['photo'])) {
-                                                    $photo = "../admin/uploads/" . $row['photo'];
-                                                } else {
-                                                    $photo = "../Media/Icon/Blue/dentist.png";
+                                                    $profilePicRaw = trim($row['photo']);
+                                                    $base = strtolower(basename($profilePicRaw));
+                                                    $disallow = ['default.jpg','default.png','default.jpeg','logo.png','logo.jpg','logo.jpeg','sdmc logo.png','sdmc_logo.png'];
+                                                    $candidateFs = realpath(__DIR__ . '/../admin/uploads/' . $profilePicRaw);
+                                                    if ($profilePicRaw !== '' && !in_array($base, $disallow, true) && $candidateFs && file_exists($candidateFs)) {
+                                                        $photo = "../admin/uploads/" . $profilePicRaw;
+                                                    }
                                                 }
                                                 ?>
                                                 <img src="<?php echo $photo; ?>" alt="<?php echo $row['docname']; ?>"
@@ -383,7 +401,33 @@ if (isset($_GET['status'])) {
 
                                             <!-- Procedure Column -->
                                             <td>
-                                                <div class="cell-text"><?php echo $row['procedure_name']; ?></div>
+                                                <div class="cell-text">
+                                                    <?php
+                                                    $appIdLocal = (int)$row['appoid'];
+                                                    $procNames = [];
+                                                    $procRes = $database->query("SELECT p.procedure_name FROM appointment_procedures ap INNER JOIN procedures p ON ap.procedure_id=p.procedure_id WHERE ap.appointment_id=$appIdLocal ORDER BY p.procedure_name ASC");
+                                                    if ($procRes && $procRes->num_rows > 0) {
+                                                        while ($pr = $procRes->fetch_assoc()) {
+                                                            // Exclude discount rows from the procedure column
+                                                            if (!in_array($pr['procedure_name'], ['PWD Discount', 'Senior Citizen Discount'])) {
+                                                                $procNames[] = $pr['procedure_name'];
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if ($row['status'] == 'completed' && !empty($procNames)) {
+                                                        // Completed appointments: always show the procedures that were done.
+                                                        echo htmlspecialchars(implode(', ', $procNames));
+                                                    } else {
+                                                        // Not yet completed: if any procedures are already attached, show assessment.
+                                                        if (!empty($procNames) || ($row['procedure_id'] && $row['procedure_id'] != 0)) {
+                                                            echo 'For Clinic Assessment';
+                                                        } else {
+                                                            echo 'Pending Evaluation';
+                                                        }
+                                                    }
+                                                    ?>
+                                                </div>
                                             </td>
 
                                             <!-- Date & Time Column -->
@@ -402,60 +446,85 @@ if (isset($_GET['status'])) {
 
 <td>
     <?php
-    // 1. Smart Total: Use saved total OR fallback to procedure price
-    // This prevents "Balance: -250" if the total wasn't saved before
-    $total = ($row['total_amount'] > 0) ? $row['total_amount'] : $row['procedure_price'];
-    
-    // 2. Calculate Balance
-    $balance = $total - 250;
-    if($balance < 0) $balance = 0;
+    // Hide agreed total and balance from patient until appointment is completed.
+    $reservationFeePaid = 250; // fixed
+    $total = ($row['total_amount'] > 0) ? $row['total_amount'] : 0;
+    $balance = max($total - $reservationFeePaid, 0);
 
-    // 3. Display Logic
-    if ($row['status'] == 'completed') {
-         echo '<span style="color:green; font-weight:bold;">Completed</span>';
-    } 
-    elseif ($row['payment_status'] == 'paid') {
-         echo '<span style="color:green; font-weight:bold;">Fully Paid</span>';
-    } 
-    elseif ($row['payment_status'] == 'pending_cash') {
-         echo '<span style="color:orange; font-weight:bold;">Cash Payment<br>Pending Verification</span>';
-    } 
-    else {
-         echo '<div style="font-size:13px; margin-bottom:5px;">';
-         echo 'Total: ₱' . number_format($total, 2) . '<br>';
-         echo 'Paid: ₱250.00<br>';
-         echo '<strong style="color:#d32f2f;">Balance: ₱' . number_format($balance, 2) . '</strong>';
-         echo '</div>';
-         
-         if ($balance > 0) {
-             // Pay Online
-             echo '<a href="pay_balance.php?id='.$row['appoid'].'&amount='.$balance.'" 
-                      class="btn-primary-soft" 
-                      style="padding: 5px 10px; font-size: 12px; text-decoration:none; margin-right:5px; display:inline-block; margin-bottom:5px;">Pay Online</a>';
-             
-             // Pay Cash
-             echo '<form action="process_cash.php" method="POST" style="display:inline;" 
-                      onsubmit="return confirm(\'Pay ₱'.number_format($balance,2).' via Cash at the clinic?\');">
-                      <input type="hidden" name="appoid" value="'.$row['appoid'].'">
-                      <button type="submit" class="btn-secondary" 
-                              style="padding: 5px 10px; font-size: 12px; border:none; cursor:pointer; border-radius:4px;">Pay Cash</button>
-                   </form>';
-         } else {
-             echo '<span style="color:green;">Fully Paid</span>';
-         }
+    // Determine if this appointment originated from a patient reservation
+    $reservationPaidFlag = isset($row['reservation_paid']) ? (int)$row['reservation_paid'] : 0;
+    $statusVal = isset($row['status']) ? strtolower($row['status']) : '';
+    $payStatusVal = isset($row['payment_status']) ? strtolower($row['payment_status']) : '';
+    $hasReservation = ($reservationPaidFlag === 1)
+        || ($payStatusVal === 'partial')
+        || ($statusVal === 'pending_reservation')
+        || ($statusVal === 'booking');
+
+    $isCancelable = ($row['status'] == 'appointment' && $row['appodate'] >= $today);
+
+        if ($row['status'] == 'completed') {
+        // Appointment finished: show minimal status with summary button.
+        if ($row['payment_status'] == 'paid') {
+            echo '<div style="font-size:13px; margin-bottom:5px;">';
+            echo '<div style="margin-bottom:6px;">'
+                . '<button type="button" class="btn-primary-soft" style="padding:5px 10px;font-size:12px;" onclick="openProcedureModal('.(int)$row['appoid'].')">View Summary</button>'
+                . '</div>';
+            // View Receipt for paid appointments (invoice). Always available when paid.
+            echo '<div><a href="receipt.php?appoid='.(int)$row['appoid'].'" target="_blank" class="btn-primary-soft" style="padding:5px 10px;font-size:12px;text-decoration:none; display:inline-block;">View Receipt</a></div>';
+            echo '</div>';
+        } elseif ($row['payment_status'] == 'pending_cash' || ($row['payment_method']=='cash' && $row['payment_status']!='paid')) {
+            // Show pending cash state even if payment_status failed to update but method flagged.
+            echo '<div style="font-size:13px; margin-bottom:5px;">';
+            echo 'Total: ₱' . number_format($total,2) . '<br>';
+            if ($hasReservation) {
+                echo 'Reservation Fee Paid: ₱' . number_format($reservationFeePaid,2) . '<br>';
+            }
+            $balanceDisplay = $hasReservation ? $balance : $total; // for admin-booked, full amount due
+            echo '<strong style="color:#d32f2f;">Balance: ₱' . number_format($balanceDisplay,2) . '</strong><br>';
+            echo '<span style="color:orange; font-weight:bold;">Cash Payment Pending Verification</span>';
+            echo '</div>';
+        } else {
+            echo '<div style="font-size:13px; margin-bottom:5px;">';
+            echo 'Total: ₱' . number_format($total,2) . '<br>';
+            if ($hasReservation) {
+                echo 'Reservation Fee Paid: ₱' . number_format($reservationFeePaid,2) . '<br>';
+            }
+            $balanceDisplay = $hasReservation ? $balance : $total;
+            echo '<strong style="color:#d32f2f;">Balance: ₱' . number_format($balanceDisplay,2) . '</strong>';
+            echo '</div>';
+            if ($balance > 0) {
+                // Pay Online
+                $amountDue = $hasReservation ? $balance : $total;
+                echo '<a href="pay_balance.php?id='.$row['appoid'].'&amount='.$amountDue.'" class="btn-primary-soft" style="padding:5px 10px; font-size:12px; text-decoration:none; margin-right:5px; display:inline-block; margin-bottom:5px;">Pay Online</a>';
+                // Pay Cash
+                echo '<form action="process_cash.php" method="POST" style="display:inline;" onsubmit="return confirm(\'Pay ₱'.number_format($balance,2).' via Cash at the clinic?\');">'
+                    . '<input type="hidden" name="appoid" value="'.$row['appoid'].'">'
+                    . '<button type="submit" class="btn-secondary" style="padding:5px 10px; font-size:12px; border:none; cursor:pointer; border-radius:4px;">Pay Cash</button>'
+                    . '</form>';
+                // Offer receipt only if reservation exists or appointment is fully paid
+                if ($row['payment_status'] === 'paid' || $hasReservation) {
+                    echo ' <a href="receipt.php?appoid='.(int)$row['appoid'].'" target="_blank" class="btn-primary-soft" style="padding:5px 10px;font-size:12px;margin-left:6px;text-decoration:none; display:inline-block; margin-bottom:5px;">View Receipt</a>';
+                }
+            }
+        }
+    } else {
+                // Upcoming / confirmed appointment
+                if ($hasReservation) {
+                    echo '<div style="font-size:13px; margin-bottom:5px;">Reservation Fee Paid: ₱' . number_format($reservationFeePaid,2) . '</div>';
+                    echo '<div style="margin-top:6px;"><a href="receipt.php?appoid='.(int)$row['appoid'].'" target="_blank" class="non-style-link" style="display:inline-block;background:#2f3670;color:#fff;padding:6px 10px;font-size:12px;border-radius:6px;text-decoration:none;margin-bottom:6px;">View Receipt</a></div>';
+                }
+                if ($isCancelable) {
+                        echo '<div style="margin-top:6px;">'
+                            . '<button type="button" class="cancel-btn" style="background:#e85d5d;color:#fff;padding:6px 10px;border:none;border-radius:6px;font-size:12px;cursor:pointer;" onclick="if(confirm(\'Are you sure you want to cancel this appointment?\')){ window.location.href=\'cancel_appointment.php?id=' . $row['appoid'] . '&source=patient\'; }">Cancel</button>'
+                            . '</div>';
+                }
     }
     ?>
 </td>
 
                                             <!-- Actions Column -->
                                             <td>
-                                                <?php if ($status == 'appointment' && $appodate >= $today): ?>
-                                                    <a href="?action=cancel&id=<?php echo $row['appoid']; ?>&doc=<?php echo urlencode($row['docname']); ?>"
-                                                        class="non-style-link">
-                                                        <center><button class="action-btn remove-btn">Cancel</button></center>
-                                                    </a>
-
-                                                <?php endif; ?>
+                                                <!-- Actions for this appointment are handled in the Payment column -->
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
@@ -498,6 +567,18 @@ if (isset($_GET['status'])) {
                     <?php endif; ?>
                 </div>
 
+                <!-- View Procedures Modal -->
+                <div id="procedureModal" class="overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);justify-content:center;align-items:center;z-index:9999;">
+                    <div class="popup" style="background:#fff;padding:25px 30px;border-radius:10px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;position:relative;">
+                        <h2 style="margin-top:0;text-align:center;">Procedures Summary</h2>
+                        <a href="#" onclick="closeProcedureModal();return false;" style="position:absolute;right:15px;top:10px;font-size:22px;text-decoration:none;color:#333;">&times;</a>
+                        <div id="procedureModalBody" style="margin-top:10px;font-size:14px;"></div>
+                        <div style="text-align:center;margin-top:18px;">
+                            <button type="button" class="btn-primary-soft" onclick="closeProcedureModal()">Close</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- right sidebar section -->
                 <div class="right-sidebar">
                     <div class="stats-section">
@@ -533,7 +614,7 @@ if (isset($_GET['status'])) {
                                             </div>
                                         <?php endwhile; ?>
                                     <?php else: ?>
-                                        <div class="no-notifications">No notifications</div>
+                                
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -541,6 +622,65 @@ if (isset($_GET['status'])) {
                             <!-- Second row -->
                             <a href="my_booking.php" class="stat-box-link">
                                 <div class="stat-box">
+
+        <script>
+        function openProcedureModal(appoid){
+            const modal = document.getElementById('procedureModal');
+            const body = document.getElementById('procedureModalBody');
+            body.innerHTML = '<em>Loading procedures...</em>';
+            modal.style.display='flex';
+            document.body.style.overflow='hidden';
+            fetch('view_procedures_ajax.php?appoid='+encodeURIComponent(appoid))
+                .then(r=>r.json())
+                .then(data=>{
+                    if(!data.success){
+                        body.innerHTML = '<span style="color:#c00;">'+(data.error||'Unable to load procedures.')+'</span>';
+                        return;
+                    }
+                    const procedures = data.procedures || [];
+                    const discounts = data.discounts || [];
+                    const procTotal = typeof data.procedures_total !== 'undefined' ? Number(data.procedures_total) : procedures.reduce((s,p)=>s+Number(p.agreed_price),0);
+                    const discTotal = typeof data.discounts_total !== 'undefined' ? Number(data.discounts_total) : discounts.reduce((s,d)=>s+Math.abs(Number(d.agreed_price)),0);
+                    const hasReservation = !!data.has_reservation;
+                    const reservation = typeof data.reservation_fee !== 'undefined' ? Number(data.reservation_fee) : (hasReservation ? 250 : 0);
+                    const net = typeof data.net_after_reservation !== 'undefined' ? Number(data.net_after_reservation) : (hasReservation ? Math.max(procTotal - reservation - discTotal,0) : (procTotal - discTotal));
+
+                    if(procedures.length===0 && discounts.length===0){
+                        body.innerHTML = '<em>No procedures have been recorded for this appointment.</em>';
+                        return;
+                    }
+
+                    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+                    html += '<tr style="background:#f5f5f5;"><th style="text-align:left;padding:6px;border:1px solid #ddd;">Procedure</th><th style="text-align:right;padding:6px;border:1px solid #ddd;">Price</th></tr>';
+                    procedures.forEach(p=>{
+                        html += '<tr><td style="padding:6px;border:1px solid #ddd;">'+p.procedure_name+'</td><td style="padding:6px;border:1px solid #ddd;text-align:right;">₱'+Number(p.agreed_price).toFixed(2)+'</td></tr>';
+                    });
+
+                    // Show totals: procedures subtotal, reservation, discounts (below reservation), then amount paid
+                    html += '<tr><td style="padding:6px;border:1px solid #ddd;font-weight:600;text-align:right;" colspan="2">Total Procedures: ₱'+procTotal.toFixed(2)+'</td></tr>';
+                    if (hasReservation && reservation>0) {
+                        html += '<tr><td style="padding:6px;border:1px solid #ddd;text-align:right;" colspan="2">Less Reservation Fee Paid: ₱'+reservation.toFixed(2)+'</td></tr>';
+                    }
+
+                    if (discTotal > 0) {
+                        // show first discount name if available
+                        const dlabel = (discounts.length>0 && discounts[0].procedure_name) ? discounts[0].procedure_name : 'Discount';
+                        html += '<tr><td style="padding:6px;border:1px solid #ddd;text-align:right;" colspan="2">'+dlabel+': - ₱'+Number(discTotal).toFixed(2)+'</td></tr>';
+                    }
+
+                    html += '<tr><td style="padding:6px;border:1px solid #ddd;font-weight:600;text-align:right;" colspan="2">Amount Paid at Clinic: ₱'+net.toFixed(2)+'</td></tr>';
+                    html += '</table>';
+                    body.innerHTML = html;
+                })
+                .catch(()=>{
+                    body.innerHTML = '<span style="color:#c00;">Network error loading procedures.</span>';
+                });
+        }
+        function closeProcedureModal(){
+            document.getElementById('procedureModal').style.display='none';
+            document.body.style.overflow='';
+        }
+        </script>
                                     <div class="stat-content">
                                         <h1 class="stat-number"><?php echo $appointmentrow->num_rows ?></h1>
                                         <p class="stat-label">My Bookings</p>
@@ -623,124 +763,58 @@ if (isset($_GET['status'])) {
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                WHERE
-                                    appointment.pid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
-                            ");
+                            $sql = "SELECT
+                                        a.appoid,
+                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                        a.appodate,
+                                        a.appointment_time,
+                                        d.docname as doctor_name,
+                                        b.name AS branch_name
+                                    FROM appointment a
+                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                    LEFT JOIN branches b ON a.branch_id = b.id
+                                    WHERE
+                                        a.pid = '$userid'
+                                        AND a.status = 'appointment'
+                                        AND a.appodate >= '$today'
+                                    GROUP BY a.appoid
+                                    ORDER BY a.appodate ASC, a.appointment_time ASC
+                                    LIMIT 3";
+
+                            $upcomingAppointments = $database->query($sql);
 
                             if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
-                                        <p class="appointment-date">' .
-                                        htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                        ' • ' .
-                                        htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                    echo '<div class="appointment-item">';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') {
+                                        $datetime .= ' - ' . $branch;
+                                    }
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
+                                    echo '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>
-                                </div>';
+                                echo '<div class="no-appointments">                                    <p>No upcoming appointments scheduled</p>                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>                                </div>';
                             }
                             ?>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <?php
-    if (isset($_GET['action']) && $_GET['action'] == 'cancel' && isset($_GET['id'])) {
-        $id = $_GET["id"];
-        $docname = isset($_GET["doc"]) ? $_GET["doc"] : '';
-        
-        // Get appointment details
-        $appointmentQuery = $database->query("SELECT a.*, d.docemail, p.pemail, p.pname 
-                                            FROM appointment a
-                                            JOIN doctor d ON a.docid = d.docid
-                                            JOIN patient p ON a.pid = p.pid
-                                            WHERE a.appoid = '$id'");
-        
-        if ($appointmentQuery && $appointmentQuery->num_rows > 0) {
-            $appointment = $appointmentQuery->fetch_assoc();
-
-            echo '
-            <div id="popup1" class="overlay">
-                <div class="popup" style="display: flex; height: 350px; width: 500px;">
-                    <center>
-                        <h2>Confirm Cancellation</h2>
-                        <a class="close" href="my_appointment.php">&times;</a>
-                        <div class="content" style="height: 150px;">
-                            <form action="cancel_appointment.php" method="POST" id="cancelForm">
-                                <input type="hidden" name="id" value="' . $id . '">
-                                <input type="hidden" name="source" value="patient">
-                                <input type="hidden" name="patient_email" value="' . $appointment['pemail'] . '">
-                                <input type="hidden" name="dentist_email" value="' . $appointment['docemail'] . '">
-                                <input type="hidden" name="appointment_date" value="' . $appointment['appodate'] . '">
-                                <input type="hidden" name="appointment_time" value="' . $appointment['appointment_time'] . '">
-                                <input type="hidden" name="procedure_name" value="' . (isset($appointment['procedure_name']) ? $appointment['procedure_name'] : '') . '">
-                                
-                                <p>Are you sure you want to cancel this appointment?</p><br>
-                                
-                                <label for="cancel_reason">Reason for cancellation:</label><br>
-                                <select name="cancel_reason" id="cancel_reason" required style="width: 80%; padding: 8px; margin: 10px 0;">
-                                    <option value="">-- Select a reason --</option>
-                                    <option value="Schedule Conflict">Schedule Conflict</option>
-                                    <option value="Financial Reasons">Financial Reasons</option>
-                                    <option value="Found Another Dentist">Found Another Dentist</option>
-                                    <option value="No Longer Needed">No Longer Needed</option>
-                                    <option value="Personal Reasons">Personal Reasons</option>
-                                    <option value="Other">Other (please specify)</option>
-                                </select>
-                                
-                                <div id="otherReasonContainer" style="display: none; width: 80%; margin: 10px auto;">
-                                    <label for="other_reason">Please specify:</label>
-                                    <input type="text" name="other_reason" id="other_reason" style="width: 100%; padding: 8px;">
-                                </div>
-                            </form>
-                        </div>
-                        <div style="display: flex;justify-content: center;">
-                            <button type="submit" form="cancelForm" class="btn-primary btn" style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">
-                                <font class="tn-in-text">Confirm Cancellation</font>
-                            </button>
-                            <a href="my_appointment.php" class="non-style-link">
-                                <button class="btn-primary btn" style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">
-                                    <font class="tn-in-text">Go Back</font>
-                                </button>
-                            </a>
-                        </div>
-                    </center>
-                </div>
-            </div>
-            <script>
-                document.getElementById("cancel_reason").addEventListener("change", function() {
-                    const otherContainer = document.getElementById("otherReasonContainer");
-                    if (this.value === "Other") {
-                        otherContainer.style.display = "block";
-                    } else {
-                        otherContainer.style.display = "none";
-                    }
-                });
-            </script>
-            ';
-        }
-    }
-    ?>
 
     <script>
         // Function to clear search and redirect
@@ -837,6 +911,34 @@ if (isset($_GET['status'])) {
                 }
             });
         }
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
 </body>
 

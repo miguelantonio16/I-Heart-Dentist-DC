@@ -31,7 +31,7 @@ $booked_times_query = "
     FROM appointment 
     WHERE docid = '$dentist_id' 
     AND appodate = '$date'
-    AND status IN ('booking', 'appointment')
+    AND status IN ('pending_reservation','booking','appointment')
     GROUP BY appointment_time
 ";
 
@@ -43,7 +43,7 @@ if (!empty($branch_id)) {
     WHERE docid = '$dentist_id' 
     AND appodate = '$date'
     AND branch_id = '$branch_id'
-    AND status IN ('booking', 'appointment')
+    AND status IN ('pending_reservation','booking','appointment')
     GROUP BY appointment_time
     ";
 }

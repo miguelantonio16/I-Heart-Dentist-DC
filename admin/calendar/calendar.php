@@ -13,36 +13,63 @@ if (!isset($_SESSION["user"]) || ($_SESSION["user"] == "" || $_SESSION['usertype
 
 include("../../connection.php");
 
+// Branch restriction (e.g., Bacoor-only admin)
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+
 $procedures = $database->query("SELECT * FROM procedures");
 $procedure_options = '';
 while ($procedure = $procedures->fetch_assoc()) {
     $procedure_options .= '<option value="' . $procedure['procedure_id'] . '">' . $procedure['procedure_name'] . '</option>';
 }
 
-$doctors = $database->query("SELECT docid, docname FROM doctor where status = 'active'");
+$doctors = $database->query(
+    $restrictedBranchId > 0
+        ? "SELECT docid, docname FROM doctor WHERE status = 'active' AND (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))"
+        : "SELECT docid, docname FROM doctor WHERE status = 'active'"
+);
 $doctor_options = '';
 while ($doctor = $doctors->fetch_assoc()) {
     $doctor_options .= '<option value="' . $doctor['docid'] . '">' . $doctor['docname'] . '</option>';
 }
 
-$branches = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
-$branch_options = '<option value="">All Branches</option>';
-while ($branch = $branches->fetch_assoc()) {
-    $branch_options .= '<option value="' . $branch['id'] . '">' . $branch['name'] . '</option>';
+if ($restrictedBranchId > 0) {
+    $branches = $database->query("SELECT id, name FROM branches WHERE id = $restrictedBranchId ORDER BY name ASC");
+    $branch_options = '';
+    while ($branch = $branches->fetch_assoc()) {
+        $selected_attr = ((int)$branch['id'] === (int)$restrictedBranchId) ? ' selected' : '';
+        $branch_options .= '<option value="' . $branch['id'] . '"' . $selected_attr . '>' . $branch['name'] . '</option>';
+    }
+} else {
+    $branches = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
+    $branch_options = '<option value="">All Branches</option>';
+    while ($branch = $branches->fetch_assoc()) {
+        $branch_options .= '<option value="' . $branch['id'] . '">' . $branch['name'] . '</option>';
+    }
 }
 
-$patients = $database->query("SELECT pid, pname, branch_id FROM patient where status = 'active'");
+$patients = $database->query(
+    $restrictedBranchId > 0
+        ? "SELECT pid, pname, branch_id FROM patient WHERE status = 'active' AND branch_id = $restrictedBranchId"
+        : "SELECT pid, pname, branch_id FROM patient WHERE status = 'active'"
+);
 $patient_name = '';
 while ($patient = $patients->fetch_assoc()) {
     $branch_id_attr = isset($patient['branch_id']) && $patient['branch_id'] !== null ? ' data-branch="' . $patient['branch_id'] . '"' : '';
     $patient_name .= '<option value="' . $patient['pid'] . '"' . $branch_id_attr . '>' . htmlspecialchars($patient['pname']) . '</option>';
 }
 
-// Get totals for right sidebar
-$doctorrow = $database->query("select * from doctor where status='active';");
-$patientrow = $database->query("select * from patient where status='active';");
-$appointmentrow = $database->query("select * from appointment where status='booking';");
-$schedulerow = $database->query("select * from appointment where status='appointment';");
+// Get totals for right sidebar (respect branch restriction)
+if ($restrictedBranchId > 0) {
+    $doctorrow = $database->query("SELECT * FROM doctor WHERE status='active' AND (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $patientrow = $database->query("SELECT * FROM patient WHERE status='active' AND branch_id = $restrictedBranchId;");
+    $appointmentrow = $database->query("SELECT * FROM appointment WHERE status='booking' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $schedulerow = $database->query("SELECT * FROM appointment WHERE status='appointment' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+} else {
+    $doctorrow = $database->query("select * from doctor where status='active';");
+    $patientrow = $database->query("select * from patient where status='active';");
+    $appointmentrow = $database->query("select * from appointment where status='booking';");
+    $schedulerow = $database->query("select * from appointment where status='appointment';");
+}
 
 // Calendar variables
 $today = date('Y-m-d');
@@ -70,6 +97,7 @@ $currentDay = date('j');
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.9.0/fullcalendar.min.js"></script>
     <!-- bootstrap css and js -->
     <link rel="stylesheet" href="../../css/bootstrap.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
     <!-- Select2 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
@@ -81,6 +109,7 @@ $currentDay = date('j');
     <link rel="stylesheet" href="../../css/main.css">
     <link rel="stylesheet" href="../../css/admin.css">
     <link rel="stylesheet" href="../../css/dashboard.css">
+    <link rel="stylesheet" href="../../css/responsive-admin.css">
 
     <title>Calendar - IHeartDentistDC</title>
     <link rel="icon" href="../../Media/Icon/logo.png" type="image/png">
@@ -117,7 +146,7 @@ $currentDay = date('j');
             text-align: center;
             padding: 20px;
         }
-        /* Ensure calendar has visible height */
+        /* Desktop default: keep a sensible min-height; mobile overrides live in responsive-admin.css */
         #calendar {
             min-height: 420px;
             margin-top: 8px;
@@ -165,13 +194,56 @@ $currentDay = date('j');
             cursor: pointer;
             background-color: rgb(118, 123, 206);
         }
+
+        /* Ensure hamburger shows and is clickable on mobile */
+        @media (max-width: 991px) {
+            .hamburger {
+                display: block;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 1001; /* above overlay */
+                width: 44px;
+                height: 44px;
+                border: none;
+                border-radius: 10px;
+                background: #1F6FDB; /* blue tile */
+                box-shadow: 0 2px 6px rgba(16,24,40,0.12);
+                padding: 10px;
+                cursor: pointer;
+            }
+            /* Simple hamburger icon bars */
+            .hamburger-box { display: block; width: 100%; height: 100%; }
+            .hamburger-inner { position: relative; display: block; width: 100%; height: 100%; }
+            .hamburger-inner::before,
+            .hamburger-inner::after,
+            .hamburger-inner span {
+                content: "";
+                display: block;
+                height: 2px;
+                background-color: #FFFFFF; /* white bars */
+                border-radius: 2px;
+                margin: 6px 0;
+            }
+            .sidebar-overlay {
+                z-index: 1000; /* keep overlay below sidebar and hamburger */
+            }
+            /* Prevent header spacing issues when hamburger is present */
+            .nav-container { 
+                padding-top: 42px; 
+            }
+        }
     </style>
 </head>
 
-<body>
+<body class="admin-calendar">
+
+    <!-- Mobile hamburger to toggle sidebar -->
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div id="sidebarOverlay" class="sidebar-overlay" aria-hidden="true"></div>
 
     <div class="nav-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -182,7 +254,24 @@ $currentDay = date('j');
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                Secretary
+                <?php
+                    $roleLabel = 'Secretary';
+                    if (isset($_SESSION['user'])) {
+                        $curr = strtolower($_SESSION['user']);
+                        if ($curr === 'admin@edoc.com') {
+                            $roleLabel = 'Super Admin';
+                        } elseif (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                            $branchLabels = [
+                                'adminbacoor@edoc.com' => 'Bacoor',
+                                'adminmakati@edoc.com' => 'Makati'
+                            ];
+                            if (isset($branchLabels[$curr])) {
+                                $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                            }
+                        }
+                    }
+                    echo $roleLabel;
+                ?>
                 </p>
             </div>
 
@@ -223,10 +312,12 @@ $currentDay = date('j');
                     <img src="../../Media/Icon/Blue/folder.png" alt="Reports" class="nav-icon">
                     <span class="nav-label">Reports</span>
                 </a>
+                <?php if (empty($_SESSION['restricted_branch_id'])): ?>
                 <a href="../settings.php" class="nav-item">
                     <img src="../../Media/Icon/Blue/settings.png" alt="Settings" class="nav-icon">
                     <span class="nav-label">Settings</span>
                 </a>
+                <?php endif; ?>
             </div>
 
             <div class="log-out">
@@ -281,18 +372,8 @@ $currentDay = date('j');
                                 </div>
                                 <div class="modal-body">
                                     <form id="eventForm">
-                                        <div class="form-group">
-                                            <label for="event_name">Event Name</label>
-                                            <input type="text" name="event_name" id="event_name" class="form-control"
-                                                placeholder="Enter your event name" required>
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="procedure">Procedure</label>
-                                            <select class="form-control" id="procedure" name="procedure" required>
-                                                <option value="">Select a Procedure</option>
-                                                <?php echo $procedure_options; ?>
-                                            </select>
-                                        </div>
+                                        <!-- Hidden event name (auto-set in JS). Field removed from UI per request. -->
+                                        <input type="hidden" name="event_name" id="event_name" value="Dental Appointment">
                                         <div class="form-group">
                                             <label for="patient_name">Patient Name</label>
                                             <select class="form-control select2-search" id="patient_name" name="patient_name" required>
@@ -430,6 +511,7 @@ $currentDay = date('j');
                     </div>
                 </div>
                 <!-- Add right sidebar section -->
+                <div id="right-sidebar-container">
                 <div class="right-sidebar">
                     <div class="stats-section">
                         <div class="stats-container">
@@ -528,46 +610,59 @@ $currentDay = date('j');
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
+                            $branchScope = '';
+                            if (isset($restrictedBranchId) && $restrictedBranchId > 0) {
+                                $branchScope = " AND (doctor.branch_id = $restrictedBranchId OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+                            }
+                            $upcomingAppointments = $database->query("SELECT
                                     appointment.appoid,
                                     procedures.procedure_name,
                                     appointment.appodate,
                                     appointment.appointment_time,
                                     patient.pname as patient_name,
-                                    doctor.docname as doctor_name
+                                    doctor.docname as doctor_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN patient ON appointment.pid = patient.pid
+                                LEFT JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
+                                    AND appointment.appodate >= '$today'" . $branchScope . "
                                 ORDER BY appointment.appodate ASC
                                 LIMIT 3;
                             ");
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                        htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                        ' • ' .
-                                        htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $pname = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $proc = htmlspecialchars($appointment['procedure_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+
+                                    echo '<div class="appointment-item">' .
+                                        '<h4 class="appointment-type">' . $pname . '</h4>' .
+                                        '<p class="appointment-dentist">With Dr. ' . $dname . '</p>' .
+                                        '<p class="appointment-date">' . $proc . '</p>' .
+                                        '<p class="appointment-date">' . $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str . (($branch!=='') ? (' - ' . $branch) : '') . '</p>' .
+                                    '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                </div>';
+                                echo '<div class="no-appointments"><p>No upcoming appointments scheduled</p></div>';
                             }
                             ?>
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -579,6 +674,33 @@ $currentDay = date('j');
         var currentBranchId = null;
 
         $(document).ready(function () {
+            // Dynamically load patients that belong to the selected dentist's branch(es)
+            function loadPatientsForDentist(docid){
+                if(!docid){ return; }
+                $.ajax({
+                    url: 'get_patients_by_doctor.php',
+                    data: { docid: docid },
+                    dataType: 'json',
+                    success: function(res){
+                        var sel = $('#patient_name');
+                        if(!sel.length){ return; }
+                        sel.empty();
+                        sel.append('<option value="">Select a Patient</option>');
+                        if(res.status && res.patients && res.patients.length){
+                            res.patients.forEach(function(p){
+                                sel.append('<option value="'+p.pid+'">'+p.pname+'</option>');
+                            });
+                        }
+                        // Refresh select2 if initialized
+                        if(sel.hasClass('select2-hidden-accessible')){
+                            sel.trigger('change.select2');
+                        }
+                    },
+                    error: function(){
+                        console.warn('Failed to load patients for dentist '+docid);
+                    }
+                });
+            }
 
             // Initialize Select2 for patient dropdown
             $('#patient_name').select2({
@@ -606,6 +728,8 @@ $currentDay = date('j');
                 currentDentistId = $(this).val();
                 if (currentDentistId) {
                     $('#docid').val(currentDentistId);
+                    // Load patients for this dentist's branch(es)
+                    loadPatientsForDentist(currentDentistId);
                     // Clear the message and initialize calendar
                     $('#calendar').html('');
                     display_events(currentDentistId);
@@ -625,6 +749,8 @@ $currentDay = date('j');
                 $('#calendar').html('');
                 // slight delay to ensure DOM and fullCalendar plugin are ready
                 setTimeout(function(){ display_events(currentDentistId); }, 50);
+                // also load patients list for the preselected dentist
+                loadPatientsForDentist(currentDentistId);
             }
 
             // Branch filter change - fetch doctors for branch and repopulate dentist dropdown
@@ -700,6 +826,7 @@ $currentDay = date('j');
                             $('#appointmentModal').modal('hide');
                             if (currentDentistId) {
                                 display_events(currentDentistId);
+                                refreshSidebar();
                             }
                         } else {
                             alert('Error: ' + response.msg);
@@ -713,8 +840,31 @@ $currentDay = date('j');
             });
 
             // Non-working day handlers
-            $("#addNonWorkingDay").click(function () {
-                $("#nonWorkingDayModal").modal("show");
+            // Use delegated binding so handler survives dynamic sidebar refreshes
+            $(document).on('click', '#addNonWorkingDay', function (e) {
+                console.log('[debug] #addNonWorkingDay clicked', { currentDentistId: currentDentistId });
+                e.preventDefault();
+                // Try normal Bootstrap modal first; on failure, use a manual fallback.
+                try {
+                    $("#nonWorkingDayModal").modal("show");
+                } catch (err) {
+                    console.warn('Bootstrap modal show failed, using fallback:', err);
+                    // Fallback: show modal markup and backdrop manually
+                    var $modal = $("#nonWorkingDayModal");
+                    if ($modal.length) {
+                        $modal.css('display', 'block');
+                        $modal.attr('aria-hidden','false');
+                        $modal.addClass('show');
+                        // ensure backdrop
+                        if ($('.modal-backdrop').length === 0) {
+                            $('<div class="modal-backdrop fade show"></div>').appendTo('body');
+                        }
+                        // prevent body scroll
+                        $('body').addClass('modal-open');
+                    } else {
+                        console.warn('[debug] #nonWorkingDayModal element not found');
+                    }
+                }
             });
 
             $("#saveNonWorkingDay").click(function () {
@@ -740,6 +890,7 @@ $currentDay = date('j');
                             alert("Non-Working Day added successfully!");
                             if (currentDentistId) {
                                 display_events(currentDentistId);
+                                refreshSidebar();
                             }
                             $("#nonWorkingDayModal").modal("hide");
                         } else {
@@ -767,7 +918,7 @@ $currentDay = date('j');
                     success: function (response) {
                         if (response.status) {
                             bookedTimes = response.booked_times;
-                            updateTimeDropdown();
+                            updateTimeDropdown(date);
                         }
                     },
                     error: function (xhr, status) {
@@ -776,7 +927,7 @@ $currentDay = date('j');
                 });
             }
 
-            function updateTimeDropdown() {
+            function updateTimeDropdown(selectedDate) {
                 var timeSlots = [
                     "09:00:00", "09:30:00",
                     "10:00:00", "10:30:00",
@@ -790,9 +941,25 @@ $currentDay = date('j');
                 $.each(timeSlots, function (index, time) {
                     var displayTime = moment(time, "HH:mm:ss").format("h:mm A");
                     var option = $("<option></option>").val(time).text(displayTime);
+                    // Disable if already booked
                     if (bookedTimes.indexOf(time) !== -1) {
                         option.attr("disabled", "disabled");
                         option.css("background-color", "#F46E34");
+                    }
+
+                    // Additionally, disable times that have already passed when the selected date is today
+                    try {
+                        if (selectedDate && moment(selectedDate).isSame(moment(), 'day')) {
+                            // Build a datetime for comparison
+                            var slotMoment = moment(selectedDate + ' ' + time, 'YYYY-MM-DD HH:mm:ss');
+                            if (slotMoment.isBefore(moment())) {
+                                option.attr('disabled', 'disabled');
+                                option.css('background-color', '#EEEEEE');
+                                option.css('color', '#999');
+                            }
+                        }
+                    } catch (e) {
+                        // ignore parsing errors
                     }
                     $('#appointment_time').append(option);
                 });
@@ -841,10 +1008,19 @@ $currentDay = date('j');
                         try { $('#calendar').fullCalendar('destroy'); } catch (e) { console.warn('Could not destroy calendar (maybe not initialized yet).', e); }
                     }
 
+                    // Configure FullCalendar to auto-size on all viewports to avoid page scrolling
+                    // Tweak desktop height by using a higher aspectRatio; keep auto heights
+                    var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
                     $('#calendar').fullCalendar({
                         defaultView: 'month',
                         timeZone: 'local',
-                        editable: true,
+                        height: 'auto',
+                        contentHeight: 'auto',
+                        aspectRatio: isMobile ? 1.05 : 1.6,
+                        editable: false, // disable drag & resize
+                        eventStartEditable: false,
+                        eventDurationEditable: false,
+                        droppable: false,
                         selectable: true,
                         selectHelper: true,
                         selectAllow: function (selectInfo) {
@@ -958,8 +1134,14 @@ $currentDay = date('j');
                                 }
                     });
                 },
-                error: function (xhr, status) {
-                    alert("Error fetching events.");
+                error: function (xhr, status, error) {
+                    var msg = "Error fetching events. Status: " + xhr.status;
+                    if (error) msg += " (" + error + ")";
+                    if (xhr.responseText) {
+                        msg += "\nResponse: " + xhr.responseText.substring(0,300);
+                    }
+                    alert(msg);
+                    console.error('Admin calendar events fetch failed:', xhr.status, status, error, xhr.responseText);
                 }
             });
 
@@ -987,7 +1169,7 @@ $currentDay = date('j');
                             }
                             alert(msg);
                             $('#appointmentModal').modal('hide');
-                            if (currentDentistId) display_events(currentDentistId);
+                                if (currentDentistId) { display_events(currentDentistId); refreshSidebar(); }
                         } else {
                             alert('Error: ' + (res.msg || 'Failed to confirm booking.'));
                         }
@@ -1005,9 +1187,10 @@ $currentDay = date('j');
         function save_event() {
             var formData = $('#eventForm').serialize();
 
-            // Validate required fields
-            if (!$('#event_name').val() || !$('#procedure').val() || !$('#patient_name').val() ||
-                !$('#appointment_date').val() || !$('#appointment_time').val() || !$('#docid').val()) {
+            // Validate required fields. Procedure is optional when the admin UI does not include it.
+            if (!$('#event_name').val() || !$('#patient_name').val() ||
+                !$('#appointment_date').val() || !$('#appointment_time').val() || !$('#docid').val() ||
+                ($('#procedure').length && !$('#procedure').val())) {
                 alert("Please fill in all required fields.");
                 return false;
             }
@@ -1025,9 +1208,15 @@ $currentDay = date('j');
                     $('#event_entry_modal').modal('hide');
                     if (response.status === true) {
                         alert(response.msg);
+                        // Always refresh calendar events and sidebar so new appointment appears
                         if ($('#choose_dentist').val()) {
                             display_events($('#choose_dentist').val());
+                        } else {
+                            // refresh whole calendar view if no dentist filter
+                            display_events();
                         }
+                        // refresh sidebar counts and upcoming appointments regardless
+                        refreshSidebar();
                     } else {
                         alert(response.msg);
                     }
@@ -1042,8 +1231,59 @@ $currentDay = date('j');
                 }
             });
         }
+
+        function refreshSidebar() {
+            $.ajax({
+                url: 'sidebar_data.php',
+                dataType: 'json',
+                success: function(res){
+                    if (res && res.status) {
+                        $('#right-sidebar-container').html(res.html);
+                    }
+                },
+                error: function(xhr){
+                    console.warn('Failed to refresh sidebar', xhr.responseText);
+                }
+            });
+        }
     </script>
     <script>
+        // Mobile sidebar toggle for Calendar page
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburger = document.getElementById('hamburgerAdmin');
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (hamburger && sidebar && overlay) {
+                const closeSidebar = () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('visible');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                };
+
+                const openSidebar = () => {
+                    sidebar.classList.add('open');
+                    overlay.classList.add('visible');
+                    hamburger.setAttribute('aria-expanded', 'true');
+                };
+
+                hamburger.addEventListener('click', function () {
+                    if (sidebar.classList.contains('open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+
+                overlay.addEventListener('click', function () {
+                    closeSidebar();
+                });
+
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeSidebar();
+                });
+            }
+        });
         // Initialize Select2 for improved dropdown UI
         $(document).ready(function(){
             try {
@@ -1078,6 +1318,8 @@ $currentDay = date('j');
                     $('#choose_branch').val(branch).trigger('change');
                 }
             });
+            // Ensure right-sidebar is populated with the latest upcoming appointments on page load
+            try { refreshSidebar(); } catch(e) {}
         });
     </script>
 </body>

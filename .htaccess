@@ -1,1 +1,70 @@
 DirectoryIndex IHeartDentistDC.php
+
+# Force HTTPS (skip on localhost)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+# Do not force HTTPS for local development hosts
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)$ [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Deny access to sensitive files
+<FilesMatch "^(config|config\.local|connection|composer)\.php$">
+	Require all denied
+</FilesMatch>
+<Files "composer.json">
+	Require all denied
+</Files>
+
+# Disable directory listings
+Options -Indexes
+
+# Restrict vendor exposure
+RedirectMatch 404 ^/vendor/.*$
+
+# Basic caching rules (tweak as needed)
+<IfModule mod_expires.c>
+	ExpiresActive On
+	ExpiresByType image/jpg "access plus 30 days"
+	ExpiresByType image/jpeg "access plus 30 days"
+	ExpiresByType image/png "access plus 30 days"
+	ExpiresByType image/gif "access plus 30 days"
+	ExpiresByType text/css "access plus 7 days"
+	ExpiresByType application/javascript "access plus 7 days"
+	ExpiresByType application/pdf "access plus 7 days"
+</IfModule>
+
+# Security headers (add CSP after testing)
+<IfModule mod_headers.c>
+	Header always set X-Frame-Options "SAMEORIGIN"
+	Header always set X-Content-Type-Options "nosniff"
+	Header always set Referrer-Policy "strict-origin-when-cross-origin"
+	Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Prevent PHP execution in uploads (if you move uploads outside public root, even better)
+# Using a rewrite to deny direct access to PHP files inside the uploads folder (allowed in .htaccess)
+<IfModule mod_rewrite.c>
+	RewriteRule ^uploads/.*\.php$ - [F,L]
+</IfModule>
+
+# Disable MultiViews to avoid content negotiation conflicts
+Options -MultiViews
+
+# Hide .php extension: externally redirect and internally rewrite
+<IfModule mod_rewrite.c>
+	# Redirect explicit homepage file to root for a clean URL
+	RewriteCond %{REQUEST_METHOD} ^GET$
+	RewriteRule ^IHeartDentistDC\.php$ / [R=301,L]
+
+	# Externally redirect requests like /page.php to /page (prevents duplicate content)
+	# Only redirect for safe GET requests — do not redirect POST (AJAX) to avoid POST->GET conversion
+	RewriteCond %{REQUEST_METHOD} ^GET$
+	RewriteCond %{THE_REQUEST} \s/([^\s]+)\.php[?\s] [NC]
+	RewriteRule ^(.+)\.php$ /%1 [R=301,L]
+
+	# Internally rewrite extensionless requests to the corresponding .php file when it exists
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteCond %{REQUEST_FILENAME}.php -f
+	RewriteRule ^(.*)$ $1.php [L]
+</IfModule>

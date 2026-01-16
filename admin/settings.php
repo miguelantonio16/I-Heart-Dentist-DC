@@ -1,8 +1,85 @@
+
 <?php 
 session_start();
+
+date_default_timezone_set('Asia/Singapore');
+
+// Authenticate admin user before any output is sent
+if (isset($_SESSION["user"])) {
+    if (($_SESSION["user"]) == "" || !isset($_SESSION['usertype']) || $_SESSION['usertype'] != 'a') {
+        header("Location: login.php");
+        exit();
+    }
+} else {
+    header("Location: login.php");
+    exit();
+}
+
+// Import database connection early for any DB work
+include(__DIR__ . "/../connection.php");
+
+// Ensure per-branch clinic info table exists (safe to run on every page load)
+$createBranchInfoTable = "CREATE TABLE IF NOT EXISTS branch_info (
+        branch_id INT PRIMARY KEY,
+        clinic_name TEXT,
+        clinic_description TEXT,
+        address TEXT,
+        phone VARCHAR(50),
+        email VARCHAR(150),
+        facebook_url VARCHAR(255),
+        instagram_url VARCHAR(255),
+        map_embed_url TEXT,
+        CONSTRAINT fk_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+$database->query($createBranchInfoTable);
+
+// Handle saving per-branch clinic info (upsert)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_branch_info'])) {
+    // Use hidden branch_id from the form (the popup is for a specific branch)
+    $bid = (int)($_POST['branch_id'] ?? 0);
+    $clinic_name = $database->real_escape_string($_POST['clinic_name'] ?? '');
+    $clinic_description = $database->real_escape_string($_POST['clinic_description'] ?? '');
+    $address = $database->real_escape_string($_POST['address'] ?? '');
+    $phone = $database->real_escape_string($_POST['phone'] ?? '');
+    $email = $database->real_escape_string($_POST['email'] ?? '');
+    $map_embed = $database->real_escape_string($_POST['map_embed_url'] ?? '');
+
+    if ($bid > 0) {
+        $sql = "INSERT INTO branch_info (branch_id, clinic_name, clinic_description, address, phone, email, map_embed_url)
+            VALUES ($bid, '$clinic_name', '$clinic_description', '$address', '$phone', '$email', '$map_embed')
+            ON DUPLICATE KEY UPDATE
+            clinic_name=VALUES(clinic_name), clinic_description=VALUES(clinic_description), address=VALUES(address), phone=VALUES(phone), email=VALUES(email), map_embed_url=VALUES(map_embed_url)";
+
+        // Log SQL and POST payload for debugging if admin save is failing for a branch
+        error_log("[settings.php] Saving branch_info: branch_id={$bid} sql=" . $sql);
+        error_log("[settings.php] POST payload: " . print_r($_POST, true));
+
+        $res = $database->query($sql);
+        if ($res === false) {
+            error_log("[settings.php] DB error on branch_info save: " . $database->error);
+            $_SESSION['flash_error'] = 'Failed to save branch info: ' . $database->error;
+        } else {
+            error_log("[settings.php] branch_info save affected_rows=" . $database->affected_rows);
+        }
+    } else {
+        $_SESSION['flash_error'] = 'Invalid branch selected.';
+    }
+
+    // Redirect cleanly back to settings to avoid resubmission
+    header('Location: settings.php');
+    exit();
+}
+
+// Get totals for right sidebar
+$doctorrow = $database->query("select * from doctor where status='active';");
+$patientrow = $database->query("select * from patient where status='active';");
+$appointmentrow = $database->query("select * from appointment where status='booking';");
+$schedulerow = $database->query("select * from appointment where status='appointment';");
+
 ?>
 
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -14,6 +91,7 @@ session_start();
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Settings - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
 
@@ -31,8 +109,10 @@ session_start();
         .edit-clinic-popup {
             padding: 20px;
             width: 100%;
-            max-width: 500px;
-            height: 300px;
+            max-width: 580px;
+            max-height: 80vh;
+            box-sizing: border-box;
+            overflow-y: auto;
             justify-items: center;
             align-items: center;
         }
@@ -50,10 +130,12 @@ session_start();
         .edit-clinic-popup input[type="url"],
         .edit-clinic-popup input[type="email"],
         .edit-clinic-popup input[type="tel"] {
-            width: 300px;
+            width: 100%;
+            max-width: 520px;
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            box-sizing: border-box;
         }
         
         .stats-container {
@@ -164,32 +246,62 @@ session_start();
         }
     </style>
 </head>
-
 <body>
-    <?php
-    date_default_timezone_set('Asia/Singapore');
-    
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    if (isset($_SESSION["user"])) {
-        if (($_SESSION["user"]) == "" || $_SESSION['usertype'] != 'a') {
-            header("location: login.php");
-        }
-    } else {
-        header("location: login.php");
-    }
+    <script>
+        // Mobile sidebar toggle for Settings page
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburger = document.getElementById('hamburgerAdmin');
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
 
-    // Import database connection
-    include("../connection.php");
+            if (hamburger && sidebar && overlay) {
+                const closeSidebar = () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('visible');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                };
 
-    // Get totals for right sidebar
-    $doctorrow = $database->query("select * from doctor where status='active';");
-    $patientrow = $database->query("select * from patient where status='active';");
-    $appointmentrow = $database->query("select * from appointment where status='booking';");
-    $schedulerow = $database->query("select * from appointment where status='appointment';");
-    ?>
+                const openSidebar = () => {
+                    sidebar.classList.add('open');
+                    overlay.classList.add('visible');
+                    hamburger.setAttribute('aria-expanded', 'true');
+                };
+
+                hamburger.addEventListener('click', function () {
+                    if (sidebar.classList.contains('open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+
+                overlay.addEventListener('click', function () {
+                    closeSidebar();
+                });
+
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeSidebar();
+                });
+            }
+        });
+    </script>
     
     <div class="main-container">
-        <div class="sidebar">
+        <?php
+        // Show any flash messages (success / error)
+        if (isset($_SESSION['flash_success'])) {
+            echo '<div style="margin:12px; padding:12px; background:#e6ffef; border:1px solid #b2f2c4; color:#006644; border-radius:6px;">' . htmlspecialchars($_SESSION['flash_success']) . '</div>';
+            unset($_SESSION['flash_success']);
+        }
+        if (isset($_SESSION['flash_error'])) {
+            echo '<div style="margin:12px; padding:12px; background:#fff1f0; border:1px solid #ffb3b3; color:#8a1f1f; border-radius:6px;">' . htmlspecialchars($_SESSION['flash_error']) . '</div>';
+            unset($_SESSION['flash_error']);
+        }
+        ?>
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -200,7 +312,24 @@ session_start();
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                Secretary
+                <?php
+                    $roleLabel = 'Secretary';
+                    if (isset($_SESSION['user'])) {
+                        $curr = strtolower($_SESSION['user']);
+                        if ($curr === 'admin@edoc.com') {
+                            $roleLabel = 'Super Admin';
+                        } elseif (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                            $branchLabels = [
+                                'adminbacoor@edoc.com' => 'Bacoor',
+                                'adminmakati@edoc.com' => 'Makati'
+                            ];
+                            if (isset($branchLabels[$curr])) {
+                                $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                            }
+                        }
+                    }
+                    echo $roleLabel;
+                ?>
                 </p>
             </div>
 
@@ -257,7 +386,7 @@ session_start();
 
         <div class="content-area">
             <div class="content">
-                <?php include __DIR__ . '/inc/sidebar-toggle.php'; ?>
+                <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 <div class="main-section">
                     <!-- search bar -->
                     <div class="search-container">
@@ -293,7 +422,6 @@ session_start();
                     ?>
 
                     
-
                     <!-- Procedures Tab -->
                     <div id="procedures-tab" class="tab-content active">
                     </div>
@@ -324,7 +452,7 @@ session_start();
                 <th>ID</th>
                 <th>Procedure Name</th>
                 <th>Description</th>
-                <th>Price</th>
+                
                 <th>Actions</th>
             </tr>
         </thead>
@@ -345,17 +473,18 @@ session_start();
                     $id = $row["procedure_id"];
                     $name = $row["procedure_name"];
                     $desc = $row["description"];
-                    $price = isset($row['price']) ? $row['price'] : null;
-                    
+
+                    // Do not allow removing the core 'Consultation' procedure (id 1 or name 'Consultation')
+                    $isCoreConsultation = (intval($id) === 1) || (strtolower(trim($name)) === 'consultation');
+                    $removeLink = $isCoreConsultation ? '' : '<a href="?action=drop_procedure&id='.$id.'&name='.$name.'" class="action-btn remove-btn">Remove</a>';
+
                     echo '<tr>
                         <td>'.$id.'</td>
                         <td><div class="cell-text">'.substr($name, 0, 30).'</div></td>
                         <td><div class="cell-text">'.substr($desc, 0, 50).'...</div></td>
-                        <td>'.($price !== null ? number_format((float)$price,2) : '-').'</td>
                         <td>
                             <div class="action-buttons">
-                                <a href="?action=edit_procedure&id='.$id.'&error=0" class="action-btn edit-btn">Edit</a>
-                                <a href="?action=drop_procedure&id='.$id.'&name='.$name.'" class="action-btn remove-btn">Remove</a>
+                                <a href="?action=edit_procedure&id='.$id.'&error=0" class="action-btn edit-btn">Edit</a>' . $removeLink . '
                             </div>
                         </td>
                     </tr>';
@@ -467,7 +596,8 @@ session_start();
                                             echo '<td><div class="cell-text">'.$bname.'</div></td>';
                                             echo '<td><div class="cell-text">'.(strlen($baddr) > 80 ? substr($baddr,0,80).'...' : $baddr).'</div></td>';
                                             echo '<td><div class="action-buttons">'
-                                                . '<a href="?action=edit_branch&id='.$bid.'" class="action-btn edit-btn">Edit</a>'
+                                                // include branch_id param and data-bid to satisfy JS fallback which checks for branch_id
+                                                . '<a href="?action=edit_branch&id='.$bid.'&branch_id='.$bid.'" class="action-btn edit-btn" data-bid="'.$bid.'">Edit</a>'
                                                 . '<a href="?action=drop_branch&id='.$bid.'&name='.urlencode($bname).'" class="action-btn remove-btn">Remove</a>'
                                                 . '</div></td>';
                                             echo '</tr>';
@@ -492,28 +622,40 @@ session_start();
                                 </thead>
                                 <tbody>
                                     <?php
-                                    $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_assoc();
-                                    
-                                    $fields = [
-                                        'clinic_name' => 'Clinic Name',
-                                        'clinic_description' => 'Clinic Description',
-                                        'address' => 'Address',
-                                        'phone' => 'Phone Number',
-                                        'email' => 'Email Address',
-                                        'facebook_url' => 'Facebook Link',
-                                        'instagram_url' => 'Instagram Link'
-                                    ];
-                                    
-                                    foreach ($fields as $field => $label) {
-                                        echo '<tr>
-                                                <td><div class="cell-text">'.$label.'</div></td>
-                                                <td><div class="cell-text">'.substr($clinic_info[$field], 0, 50).(strlen($clinic_info[$field]) > 50 ? '...' : '').'</div></td>
-                                                <td>
-                                                    <div class="action-buttons">
-                                                        <a href="?action=edit_clinic&field='.$field.'" class="action-btn edit-btn">Edit</a>
-                                                    </div>
-                                                </td>
-                                            </tr>';
+                                    // Show per-branch clinic information with edit buttons
+                                    // Explicitly select branch fields and only the needed branch_info columns
+                                    // Avoid using bi.* because it includes a `branch_id` column which can overwrite the aliased b.id (NULL when no row exists).
+                                    $branch_list_sql = "SELECT b.id AS branch_id, b.name AS branch_name, b.address AS branch_address, 
+                                                        bi.clinic_name AS clinic_name, bi.clinic_description AS clinic_description, bi.address AS bi_address, bi.phone AS phone, bi.email AS email, bi.facebook_url AS facebook_url, bi.instagram_url AS instagram_url, bi.map_embed_url AS map_embed_url
+                                                        FROM branches b
+                                                        LEFT JOIN branch_info bi ON bi.branch_id = b.id
+                                                        ORDER BY b.id ASC";
+                                    $branch_list = $database->query($branch_list_sql);
+                                    if (!$branch_list || $branch_list->num_rows == 0) {
+                                        echo '<tr><td colspan="3"><center>No branches found</center></td></tr>';
+                                    } else {
+                                        while ($br = $branch_list->fetch_assoc()) {
+                                            $bid = (int)$br['branch_id'];
+                                            $bname = htmlspecialchars($br['branch_name']);
+                                            $baddr = htmlspecialchars($br['branch_address']);
+                                            $cname = isset($br['clinic_name']) ? htmlspecialchars($br['clinic_name']) : '';
+                                            $cphone = isset($br['phone']) ? htmlspecialchars($br['phone']) : '';
+                                            $cemail = isset($br['email']) ? htmlspecialchars($br['email']) : '';
+                                            $cdesc = isset($br['clinic_description']) ? htmlspecialchars($br['clinic_description']) : '';
+                                            echo '<tr>';
+                                            echo '<td><div class="cell-text">'. $bname .'</div></td>';
+                                            echo '<td><div class="cell-text">'.(strlen($cname) ? substr($cname,0,50) : '<em>Not set</em>').'</div><div class="cell-text" style="font-size:12px;color:#666;">'.(strlen($cdesc) ? substr($cdesc,0,80) : '').'</div></td>';
+                                            // Use explicit settings.php URL and include data-bid for JS fallback
+                                            // Use a small GET form to reliably send branch_id when Edit is clicked
+                                            echo '<td><div class="action-buttons">'
+                                                . '<form method="GET" action="settings.php" style="display:inline;margin:0;">'
+                                                . '<input type="hidden" name="action" value="edit_branch_info">'
+                                                . '<input type="hidden" name="branch_id" value="' . $bid . '">'
+                                                . '<button type="submit" class="action-btn edit-btn" data-bid="' . $bid . '" onclick="event.preventDefault(); window.location.href=\'settings.php?action=edit_branch_info&branch_id=' . $bid . '\';">Edit</button>'
+                                                . '</form>'
+                                                . '</div></td>';
+                                            echo '</tr>';
+                                        }
                                     }
                                     ?>
                                 </tbody>
@@ -642,42 +784,49 @@ session_start();
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
+                            $upcomingAppointments = $database->query("SELECT
                                     appointment.appoid,
                                     procedures.procedure_name,
                                     appointment.appodate,
                                     appointment.appointment_time,
                                     patient.pname as patient_name,
-                                    doctor.docname as doctor_name
+                                    doctor.docname as doctor_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN patient ON appointment.pid = patient.pid
+                                LEFT JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
                                     AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
+                                ORDER BY appointment.appodate ASC, appointment.appointment_time ASC
                             ");
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $pname = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $proc = htmlspecialchars($appointment['procedure_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    echo '<div class="appointment-item">' .
+                                        '<h4 class="appointment-type">' . $pname . '</h4>' .
+                                        '<p class="appointment-dentist">With Dr. ' . $dname . '</p>' .
+                                        '<p class="appointment-date">' . $proc . '</p>' .
+                                        '<p class="appointment-date">' . $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str . (($branch!=='') ? (' - ' . $branch) : '') . '</p>' .
+                                    '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                </div>';
+                                echo '<div class="no-appointments"><p>No upcoming appointments scheduled</p></div>';
                             }
                             ?>
                         </div>
@@ -689,23 +838,47 @@ session_start();
 
     <?php
     if ($_GET) {
-        $id = $_GET["id"];
-        $action = $_GET["action"];
+        $id = isset($_GET["id"]) ? $_GET["id"] : null;
+        $action = isset($_GET["action"]) ? $_GET["action"] : null;
         
-        if ($action == 'drop') {
-            $nameget = $_GET["name"];
+        // If the drop_procedure flow was redirected with inactive=1, show a stronger
+        // confirmation that allows permanently deleting the inactive procedure.
+        if ($action === 'drop_procedure' && isset($_GET['inactive']) && $_GET['inactive'] == '1') {
+            $nameget = isset($_GET['name']) ? $_GET['name'] : '';
             echo '
             <div id="popup1" class="overlay">
                     <div class="popup">
                     <center>
-                        <h2>Are you sure?</h2>
+                        <h2>Permanently delete?</h2>
                         <a class="close" href="settings.php">&times;</a>
-                        <div class="content" style="height: 0px;">
-                            You want to delete this service<br>(' . substr($nameget, 0, 40) . ').
+                        <div class="content" style="height: 0px; text-align:center;">
+                            <p style="font-size:16px; margin:12px 0 0 0;">Are you sure you want to delete?</p>
                         </div>
                         <div style="display: flex;justify-content: center;">
-                        <a href="delete-service.php?id=' . $id . '" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"<font class="tn-in-text">&nbsp;Yes&nbsp;</font></button></a>&nbsp;&nbsp;&nbsp;
-                        <a href="settings.php" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"><font class="tn-in-text">&nbsp;&nbsp;No&nbsp;&nbsp;</font></button></a>
+                        <a href="delete-procedure.php?id=' . urlencode($id) . '&force=1" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"<font class="tn-in-text">&nbsp;Permanently Delete&nbsp;</font></button></a>&nbsp;&nbsp;&nbsp;
+                        <a href="settings.php" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"><font class="tn-in-text">&nbsp;&nbsp;Cancel&nbsp;&nbsp;</font></button></a>
+                        </div>
+                    </center>
+            </div>
+            </div>
+            ';
+            exit();
+        }
+        if ($action == 'drop') {
+            $nameget = isset($_GET["name"]) ? $_GET["name"] : '';
+                // Show a moderate-width, auto-height popup so long names are visible without too much empty space
+                echo '
+                <div id="popup1" class="overlay">
+                    <div class="popup" style="max-width:620px; width:70%;">
+                    <center>
+                        <h2>Are you sure?</h2>
+                        <a class="close" href="settings.php">&times;</a>
+                        <div class="content" style="max-width:560px; padding:16px; text-align:center;">
+                            <p style="text-align:center; margin:0 auto; display:inline-block;">You want to delete this service<br>(' . htmlspecialchars($nameget) . ').</p>
+                        </div>
+                        <div style="display: flex;justify-content: center; gap:12px;">
+                        <a href="delete-service.php?id=' . $id . '" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">Yes</button></a>
+                        <a href="settings.php" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">No</button></a>
                         </div>
                     </center>
             </div>
@@ -981,10 +1154,7 @@ session_start();
                                         <label for="description">Description:</label>
                                         <textarea name="description" class="input-text" placeholder="Procedure Description" rows="4" required></textarea>
                                     </div>
-                                    <div class="form-group">
-                                        <label for="price">Price (PHP):</label>
-                                        <input type="text" name="price" class="input-text" placeholder="0.00">
-                                    </div>
+                                    
                                     <div class="form-actions" style="display:flex;">
                                         <input type="reset" value="Reset" class="new-action-btn">
                                         <input type="submit" value="Add Procedure" class="new-action-btn" style="width: 140px;">
@@ -1020,6 +1190,7 @@ session_start();
             $row = $result->fetch_assoc();
             $name = $row["procedure_name"];
             $desc = $row["description"];
+            $price = isset($row['price']) ? $row['price'] : '';
 
             $error_1 = $_GET["error"];
             $errorlist = array(
@@ -1030,6 +1201,9 @@ session_start();
             );
 
             if ($error_1 != '3') {
+                // Determine if this is the core Consultation procedure (allow price edit only for it)
+                $isCoreConsultation = (intval($id) === 1) || (strtolower(trim($name)) === "consultation");
+
                 echo '
                 <div id="popup1" class="overlay">
                         <div class="popup procedures-popup">
@@ -1047,11 +1221,15 @@ session_start();
                                     <div class="form-group">
                                         <label for="description">Description:</label>
                                         <textarea name="description" class="input-text" placeholder="Procedure Description" rows="4" required>' . $desc . '</textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="price">Price (PHP):</label>
-                                        <input type="text" name="price" class="input-text" placeholder="0.00" value="' . (isset($row['price']) ? number_format((float)$row['price'],2) : '') . '">
-                                    </div>
+                                    </div>';
+
+                // If this is the Consultation procedure, show a price input so admin can edit its fixed price
+                if ($isCoreConsultation) {
+                    $priceVal = ($price === '' || $price === null) ? '' : number_format((float)$price, 2, '.', '');
+                    echo '<div class="form-group"><label for="price">Price (₱)</label><input type="number" name="price" class="input-text" step="0.01" min="0" placeholder="e.g. 500.00" value="' . $priceVal . '"></div>';
+                }
+
+                echo '
                                     <div class="form-actions">
                                         <input type="reset" value="Reset" class="login-btn btn-primary-soft btn">
                                         <input type="submit" value="Save Changes" class="login-btn btn-primary btn">
@@ -1082,24 +1260,51 @@ session_start();
                 ';
             }
         } elseif ($action == 'drop_procedure') {
-            $nameget = $_GET["name"];
-            echo '
-            <div id="popup1" class="overlay">
-                    <div class="popup">
-                    <center>
-                        <h2>Are you sure?</h2>
-                        <a class="close" href="settings.php">&times;</a>
-                        <div class="content" style="height: 0px;">
-                            You want to delete this procedure<br>(' . substr($nameget, 0, 40) . ').
-                        </div>
-                        <div style="display: flex;justify-content: center;">
-                        <a href="delete-procedure.php?id=' . $id . '" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"<font class="tn-in-text">&nbsp;Yes&nbsp;</font></button></a>&nbsp;&nbsp;&nbsp;
-                        <a href="settings.php" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"><font class="tn-in-text">&nbsp;&nbsp;No&nbsp;&nbsp;</font></button></a>
-                        </div>
-                    </center>
-            </div>
-            </div>
-            ';
+            $nameget = isset($_GET["name"]) ? $_GET["name"] : '';
+            $cnt1 = isset($_GET['cnt1']) ? intval($_GET['cnt1']) : 0;
+            $cnt2 = isset($_GET['cnt2']) ? intval($_GET['cnt2']) : 0;
+            $hasRefs = ($cnt1 + $cnt2) > 0;
+            if ($hasRefs) {
+                // Stronger confirmation with POST force delete; use a moderate popup width to avoid empty space
+                echo '
+                <div id="popup1" class="overlay">
+                    <div class="popup" style="max-width:620px; width:70%;">
+                        <center>
+                            <h2>Are you sure?</h2>
+                            <a class="close" href="settings.php">&times;</a>
+                            <div class="content" style="max-width:560px; padding:16px; text-align:center;">
+                                <p style="font-size:16px; margin:12px 0 0 0; text-align:center; display:inline-block;">Are you sure you want to delete?</p>
+                            </div>
+                            <div style="display:flex;justify-content:center;gap:16px;">
+                                <form action="delete-procedure.php?id=' . $id . '&force=1" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn-primary btn" style="margin:10px;padding:10px;">Yes, Delete</button>
+                                </form>
+                                <a href="settings.php" class="non-style-link"><button class="btn-primary btn" style="margin:10px;padding:10px;">No</button></a>
+                            </div>
+                        </center>
+                </div>
+                </div>
+                ';
+            } else {
+                // Simple confirmation when no references exist; use a moderate popup width for readability
+                echo '
+                <div id="popup1" class="overlay">
+                    <div class="popup" style="max-width:620px; width:70%;">
+                        <center>
+                            <h2>Are you sure?</h2>
+                            <a class="close" href="settings.php">&times;</a>
+                            <div class="content" style="max-width:560px; padding:16px; text-align:center;">
+                                <p style="font-size:16px; margin:12px 0 0 0; text-align:center; display:inline-block;">Are you sure you want to delete?</p>
+                            </div>
+                            <div style="display: flex;justify-content: center; gap:12px;">
+                                <a href="delete-procedure.php?id=' . $id . '" class="non-style-link"><button class="btn-primary btn" style="margin:10px;padding:10px;">Yes</button></a>
+                                <a href="settings.php" class="non-style-link"><button class="btn-primary btn" style="margin:10px;padding:10px;">No</button></a>
+                            </div>
+                        </center>
+                </div>
+                </div>
+                ';
+            }
         } elseif ($action == 'add_branch') {
             $error = isset($_GET['error']) ? $_GET['error'] : 0;
             $errorlist = array(
@@ -1111,14 +1316,68 @@ session_start();
             echo '<div id="popup1" class="overlay"><div class="popup"><center><a class="close" href="settings.php">&times;</a><div style="display:flex;justify-content:center;"><div class="abc"><table width="80%" class="sub-table" border="0"><tr><td colspan="2">'. $errorlist[$error] .'</td></tr><tr><td colspan="2"><p style="font-size:22px">Add New Branch</p></td></tr><tr><form action="add-branch.php" method="POST"><td colspan="2"><label for="name">Branch Name:</label><br><input type="text" name="name" class="input-text" required></td></tr><tr><td colspan="2"><label for="address">Address:</label><br><textarea name="address" class="input-text" rows="3"></textarea></td></tr><tr><td colspan="2"><input type="reset" value="Reset" class="new-action-btn"> <input type="submit" value="Add Branch" class="new-action-btn"></td></tr></form></table></div></div></center></div></div>';
         } elseif ($action == 'edit_branch') {
             $bid = intval($_GET['id']);
-            $branch = $database->query("SELECT * FROM branches WHERE id='$bid'")->fetch_assoc();
-            $bname = htmlspecialchars($branch['name']);
-            $baddr = htmlspecialchars($branch['address']);
+            $branch = $database->query("SELECT * FROM branches WHERE id='$bid'");
+            if ($branch && $branch->num_rows > 0) {
+                $branch = $branch->fetch_assoc();
+                $bname = isset($branch['name']) ? htmlspecialchars($branch['name']) : 'Branch';
+                $baddr = isset($branch['address']) ? htmlspecialchars($branch['address']) : '';
+            } else {
+                $branch = null;
+                $bname = 'Branch';
+                $baddr = '';
+            }
             echo '<div id="popup1" class="overlay"><div class="popup"><center><a class="close" href="settings.php">&times;</a><div style="display:flex;justify-content:center;"><div class="abc"><table width="80%" class="sub-table" border="0"><tr><td colspan="2"><p style="font-size:22px">Edit Branch</p></td></tr><tr><form action="edit-branch.php" method="POST"><input type="hidden" name="id" value="'.$bid.'"><td colspan="2"><label for="name">Branch Name:</label><br><input type="text" name="name" class="input-text" value="'.$bname.'" required></td></tr><tr><td colspan="2"><label for="address">Address:</label><br><textarea name="address" class="input-text" rows="3">'.$baddr.'</textarea></td></tr><tr><td colspan="2"><input type="reset" value="Reset" class="new-action-btn"> <input type="submit" value="Save Changes" class="new-action-btn"></td></tr></form></table></div></div></center></div></div>';
         } elseif ($action == 'drop_branch') {
             $nameget = isset($_GET['name']) ? urldecode($_GET['name']) : '';
             $bid = intval($_GET['id']);
             echo '<div id="popup1" class="overlay"><div class="popup"><center><h2>Are you sure?</h2><a class="close" href="settings.php">&times;</a><div class="content" style="height: 0px;">You want to delete this branch<br>(' . substr($nameget, 0, 40) . ').</div><div style="display: flex;justify-content: center;"><a href="delete-branch.php?id=' . $bid . '" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"<font class="tn-in-text">&nbsp;Yes&nbsp;</font></button></a>&nbsp;&nbsp;&nbsp;<a href="settings.php" class="non-style-link"><button  class="btn-primary btn"  style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;"><font class="tn-in-text">&nbsp;&nbsp;No&nbsp;&nbsp;</font></button></a></div></center></div></div>';
+        }
+        elseif ($action == 'edit_branch_info') {
+            // Record incoming request for debugging: why branch_id may be 0
+            error_log("[settings.php] Entering edit_branch_info handler. REQUEST_URI=" . ($_SERVER['REQUEST_URI'] ?? '') . " | QUERY_STRING=" . ($_SERVER['QUERY_STRING'] ?? '') . " | GET=" . print_r($_GET, true));
+            $bid = intval($_GET['branch_id'] ?? 0);
+            error_log("[settings.php] Resolved bid=" . $bid . " | REMOTE_ADDR=" . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+            // Fetch branch and existing branch_info if any
+            $branch_rs = $database->query("SELECT * FROM branches WHERE id='$bid'");
+            if ($branch_rs && $branch_rs->num_rows > 0) {
+                $branch = $branch_rs->fetch_assoc();
+                $bname = isset($branch['name']) ? htmlspecialchars($branch['name']) : 'Branch';
+                $baddr = isset($branch['address']) ? htmlspecialchars($branch['address']) : '';
+            } else {
+                $branch = null;
+                $bname = 'Branch';
+                $baddr = '';
+            }
+            $binfo_rs = $database->query("SELECT * FROM branch_info WHERE branch_id='$bid' LIMIT 1");
+            $binfo = $binfo_rs && $binfo_rs->num_rows ? $binfo_rs->fetch_assoc() : [];
+
+            $clinic_name = isset($binfo['clinic_name']) ? htmlspecialchars($binfo['clinic_name']) : '';
+            $clinic_description = isset($binfo['clinic_description']) ? htmlspecialchars($binfo['clinic_description']) : '';
+            $address = isset($binfo['address']) ? htmlspecialchars($binfo['address']) : $baddr;
+            $phone = isset($binfo['phone']) ? htmlspecialchars($binfo['phone']) : '';
+            $email = isset($binfo['email']) ? htmlspecialchars($binfo['email']) : '';
+            $map_embed = isset($binfo['map_embed_url']) ? htmlspecialchars($binfo['map_embed_url']) : '';
+
+            echo '<div id="popup1" class="overlay"><div class="popup edit-clinic-popup"><center>';
+            echo '<h2>Edit Clinic Info — ' . $bname . '</h2>';
+            echo '<a class="close" href="settings.php">&times;</a>';
+            echo '<form method="POST" action="settings.php">';
+            echo '<input type="hidden" name="save_branch_info" value="1">';
+            echo '<input type="hidden" name="branch_id" value="' . $bid . '">';
+            echo '<div style="text-align:left; margin-top:10px;">';
+            echo '<label>Clinic Name</label><br><input type="text" name="clinic_name" value="' . $clinic_name . '" required><br><br>';
+            echo '<label>Clinic Description</label><br><textarea name="clinic_description">' . $clinic_description . '</textarea><br><br>';
+            echo '<label>Address</label><br><input type="text" name="address" value="' . $address . '"><br><br>';
+            echo '<label>Phone</label><br><input type="tel" name="phone" value="' . $phone . '"><br><br>';
+            echo '<label>Email</label><br><input type="email" name="email" value="' . $email . '"><br><br>';
+            echo '<label>Map Embed URL</label><br><input type="text" name="map_embed_url" value="' . $map_embed . '"><br><br>';
+            echo '</div>';
+            echo '<div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">';
+            echo '<a class="non-style-link" href="settings.php"><button type="button" class="new-action-btn">Cancel</button></a>';
+            echo '<button type="submit" class="new-action-btn">Save Changes</button>';
+            echo '</div>';
+            echo '</form>';
+            echo '</center></div></div>';
         }
     }
     ?>
@@ -1203,18 +1462,96 @@ session_start();
 
         // Show popup if URL has any action parameter
         document.addEventListener('DOMContentLoaded', function () {
+            // Use delegated pointerdown to capture clicks on any current or future
+            // link/button that navigates to a settings action so we can save scroll
+            // before the navigation happens. This avoids binding to every element.
+            try {
+                document.addEventListener('pointerdown', function (ev) {
+                    try {
+                        const target = ev.target && ev.target.closest ? ev.target.closest('a, button, input, [data-action], [data-href]') : null;
+                        if (!target) return;
+
+                        const href = (target.getAttribute && (target.getAttribute('href') || target.getAttribute('data-href') || target.getAttribute('formaction'))) || '';
+                        const onclick = (target.getAttribute && target.getAttribute('onclick')) || '';
+                        const dataAction = (target.dataset && target.dataset.action) ? target.dataset.action : '';
+
+                        // If the click is on/inside a form (submit/save), or an explicit action link,
+                        // or matches common add/save/edit/delete keywords, save the scroll position.
+                        const form = target.closest ? target.closest('form') : null;
+                        const tag = (target.tagName || '').toLowerCase();
+                        const isSubmitButton = (tag === 'button' && (String(target.type || '').toLowerCase() === 'submit')) || (tag === 'input' && String(target.type || '').toLowerCase() === 'submit');
+
+                        const keywordMatch = /add_|add-|save|create|submit|delete|drop|edit|remove|action=/i.test(href + onclick + dataAction);
+
+                        if (form || isSubmitButton || href.indexOf('action=') !== -1 || onclick.indexOf('action=') !== -1 || dataAction || keywordMatch) {
+                            try {
+                                sessionStorage.setItem('settings_last_scroll', String(window.scrollY || document.documentElement.scrollTop || 0));
+                            } catch (e) { }
+                        }
+                    } catch (e) { /* ignore */ }
+                }, true);
+            } catch (e) { }
             const urlParams = new URLSearchParams(window.location.search);
             const action = urlParams.get('action');
 
-            if (action === 'view' || action === 'edit' || action === 'drop' || action === 'add' || action === 'edit_clinic' || action === 'edit_procedure' || action === 'drop_procedure' || action === 'add_procedure' || action === 'add_branch' || action === 'edit_branch' || action === 'drop_branch') {
+            if (action === 'view' || action === 'edit' || action === 'drop' || action === 'add' || action === 'edit_clinic' || action === 'edit_procedure' || action === 'drop_procedure' || action === 'add_procedure' || action === 'add_branch' || action === 'edit_branch' || action === 'drop_branch' || action === 'edit_branch_info') {
                 const popup = document.getElementById('popup1');
                 if (popup) {
                     popup.style.display = 'flex';
                     document.body.style.overflow = 'hidden';
+
+                    // Restore previous scroll position if we saved one before navigation.
+                    try {
+                        const last = sessionStorage.getItem('settings_last_scroll');
+                        if (last !== null) {
+                            setTimeout(function () {
+                                window.scrollTo(0, parseInt(last, 10) || 0);
+                                sessionStorage.removeItem('settings_last_scroll');
+                            }, 1);
+                        }
+                    } catch (e) { }
+
+                    // Auto-focus the first form control in the popup for convenience
+                    try {
+                        const firstControl = popup.querySelector('input[name="clinic_name"], input[type="text"], textarea');
+                        if (firstControl) {
+                            firstControl.focus();
+                        }
+                    } catch (e) {
+                        // ignore focus errors
+                    }
                 }
             }
 
-            // Close button functionality
+            // Ensure edit links navigate with the correct branch id (fallback for any malformed hrefs)
+            // Only apply the branch-id fallback to branch edit links (do not block other edit buttons)
+            document.querySelectorAll('a.action-btn.edit-btn').forEach(function(el){
+                el.addEventListener('click', function(e){
+                    try {
+                        const href = this.getAttribute('href') || '';
+                        const dataBid = this.getAttribute('data-bid') || '';
+                        // Only run fallback when the link targets branch edit (explicit action or branch_id param)
+                        const isBranchEditAction = /action=edit_branch_info|action=edit_branch/.test(href) || /[?&]branch_id=\d+/.test(href);
+                        if (!isBranchEditAction) {
+                            return; // don't interfere with other edit links (procedures, services, etc.)
+                        }
+
+                        // If href indicates branch_id=0 or missing, force navigation using data-bid
+                        const hasBranchParam = /[?&]branch_id=\d+/.test(href);
+                        const branchIsZero = /[?&]branch_id=0(?!\d)/.test(href);
+                        if (!hasBranchParam || branchIsZero) {
+                            e.preventDefault();
+                            if (dataBid && parseInt(dataBid) > 0) {
+                                window.location.href = 'settings.php?action=edit_branch_info&branch_id=' + encodeURIComponent(dataBid);
+                            }
+                        }
+                    } catch (err) {
+                        // Ignore and allow default navigation
+                    }
+                });
+            });
+
+                        // Close button functionality
             const closeButtons = document.querySelectorAll('.close');
             closeButtons.forEach(button => {
                 button.addEventListener('click', function (e) {
@@ -1227,6 +1564,7 @@ session_start();
                         const url = new URL(window.location);
                         url.searchParams.delete('action');
                         url.searchParams.delete('id');
+                        url.searchParams.delete('branch_id');
                         url.searchParams.delete('name');
                         url.searchParams.delete('error');
                         url.searchParams.delete('field');
@@ -1246,6 +1584,7 @@ session_start();
                         const url = new URL(window.location);
                         url.searchParams.delete('action');
                         url.searchParams.delete('id');
+                        url.searchParams.delete('branch_id');
                         url.searchParams.delete('name');
                         url.searchParams.delete('error');
                         url.searchParams.delete('field');

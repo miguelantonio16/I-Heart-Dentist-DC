@@ -13,6 +13,18 @@ include("../connection.php");
 // Handle AJAX requests
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
+    // Branch restriction
+    $restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+    // Detect whether appointment_archive stores branch_id (schema can vary)
+    $archiveHasBranch = false;
+    try {
+        $colCheck = $database->query("SHOW COLUMNS FROM appointment_archive LIKE 'branch_id'");
+        if ($colCheck && $colCheck->num_rows > 0) {
+            $archiveHasBranch = true;
+        }
+    } catch (Throwable $e) {
+        $archiveHasBranch = false;
+    }
     
     $type = $_GET['type'] ?? 'appointments';
     $page = max(1, intval($_GET['page'] ?? 1));
@@ -21,120 +33,175 @@ if (isset($_GET['ajax'])) {
     $sortOrder = in_array($_GET['sort'] ?? 'DESC', ['ASC', 'DESC']) ? $_GET['sort'] : 'DESC';
 
     $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
+    $procedureFilter = isset($_GET['procedure_id']) ? intval($_GET['procedure_id']) : 0;
+    $dateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
+    $dateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
     // Query setup
     switch ($type) {
         case 'appointments':
-            $baseQuery = "SELECT a.*, p.pname, d.docname, pr.procedure_name 
-                    FROM (
-                        SELECT appoid, pid, docid, appodate, appointment_time, status, procedure_id 
-                        FROM appointment 
-                        WHERE status = 'completed'
-                        UNION ALL
-                        SELECT appoid, pid, docid, appodate, appointment_time, status, procedure_id 
-                        FROM appointment_archive 
-                        WHERE status IN ('cancelled', 'rejected')
-                    ) a
-                    LEFT JOIN patient p ON a.pid = p.pid
-                    LEFT JOIN doctor d ON a.docid = d.docid
-                    LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id";
-            
+            // Include stacked procedures via appointment_procedures and aggregate names
+            // Select branch_id from appointment/appointment_archive when available so we can filter by booked branch
+            $baseQuery = "SELECT 
+                    a.appoid, a.pid, a.docid, a.appodate, a.appointment_time, a.status, a.procedure_id, a.branch_id,
+                    p.pname, d.docname,
+                    COALESCE(b.name,'(Unassigned)') AS branch,
+                    pr.procedure_name AS primary_procedure,
+                    GROUP_CONCAT(DISTINCT p2.procedure_name ORDER BY p2.procedure_name SEPARATOR ', ') AS procedures_list
+                FROM (
+                    SELECT appoid, pid, docid, appodate, appointment_time, status, procedure_id, branch_id
+                    FROM appointment 
+                    WHERE status = 'completed'
+                    UNION ALL
+                    SELECT appoid, pid, docid, appodate, appointment_time, status, procedure_id, " . ($archiveHasBranch ? 'branch_id' : 'NULL') . " AS branch_id
+                    FROM appointment_archive 
+                    WHERE status IN ('cancelled', 'rejected')
+                ) a
+                LEFT JOIN patient p ON a.pid = p.pid
+                LEFT JOIN doctor d ON a.docid = d.docid
+                LEFT JOIN branches b ON (COALESCE(a.branch_id, d.branch_id) = b.id)
+                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                LEFT JOIN procedures p2 ON ap.procedure_id = p2.procedure_id";
+
             $where = [];
+            if ($restrictedBranchId > 0) {
+                // Only include appointments whose effective booked branch equals the restricted branch.
+                // Effective branch = appointment.branch_id if set, otherwise doctor's branch_id.
+                $where[] = "COALESCE(a.branch_id, d.branch_id) = $restrictedBranchId";
+            }
             if ($statusFilter !== 'all') {
                 $where[] = "a.status = '" . $database->real_escape_string($statusFilter) . "'";
             }
             if (!empty($searchTerm)) {
-                $searchTerm = $database->real_escape_string($searchTerm);
-                $where[] = "(p.pname LIKE '%$searchTerm%' OR d.docname LIKE '%$searchTerm%' OR pr.procedure_name LIKE '%$searchTerm%')";
+                $st = $database->real_escape_string($searchTerm);
+                $where[] = "(p.pname LIKE '%$st%' OR d.docname LIKE '%$st%' OR pr.procedure_name LIKE '%$st%')";
             }
+            // Procedure filter: match primary or any stacked procedures
+            if (!empty($procedureFilter) && is_numeric($procedureFilter)) {
+                $procId = intval($procedureFilter);
+                $where[] = "(a.procedure_id = $procId OR ap.procedure_id = $procId)";
+            }
+            // Date range filter (appodate is stored as YYYY-MM-DD)
+            if (!empty($dateFrom)) {
+                $df = $database->real_escape_string($dateFrom);
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $df)) {
+                    $where[] = "a.appodate >= '$df'";
+                }
+            }
+            if (!empty($dateTo)) {
+                $dt = $database->real_escape_string($dateTo);
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dt)) {
+                    $where[] = "a.appodate <= '$dt'";
+                }
+            }
+
             if (!empty($where)) {
                 $baseQuery .= " WHERE " . implode(" AND ", $where);
             }
-            
-            // Similar modifications for countQuery
-            $countQuery = "SELECT COUNT(*) FROM (
-                SELECT a.appoid FROM appointment a
-                LEFT JOIN patient p ON a.pid = p.pid
-                LEFT JOIN doctor d ON a.docid = d.docid
-                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
-                WHERE a.status = 'completed'";
-            
-            if (!empty($searchTerm)) {
-                $countQuery .= " AND (p.pname LIKE '%$searchTerm%' OR d.docname LIKE '%$searchTerm%' OR pr.procedure_name LIKE '%$searchTerm%')";
-            }
-            
-            $countQuery .= " UNION ALL
-                SELECT a.appoid FROM appointment_archive a
-                LEFT JOIN patient p ON a.pid = p.pid
-                LEFT JOIN doctor d ON a.docid = d.docid
-                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
-                WHERE a.status IN ('cancelled', 'rejected')";
-            
-            if (!empty($searchTerm)) {
-                $countQuery .= " AND (p.pname LIKE '%$searchTerm%' OR d.docname LIKE '%$searchTerm%' OR pr.procedure_name LIKE '%$searchTerm%')";
-            }
-            
-            $countQuery .= ") AS combined";
-            
+            // Group by appointment to enable aggregation of stacked procedures
+            $baseQuery .= " GROUP BY a.appoid";
+
+            // Count appointments (distinct appoid) with same filters
+            $countQuery = "SELECT COUNT(*) as total FROM (" . str_replace(
+                ["SELECT \n                    a.appoid, a.pid, a.docid, a.appodate, a.appointment_time, a.status, a.procedure_id,\n                    p.pname, d.docname,\n                    COALESCE(b.name,'(Unassigned)') AS branch,\n                    pr.procedure_name AS primary_procedure,\n                    GROUP_CONCAT(DISTINCT p2.procedure_name ORDER BY p2.procedure_name SEPARATOR ', ') AS procedures_list"],
+                ["SELECT a.appoid"],
+                $baseQuery
+            ) . ") AS combined";
+
+            // Build order clause to include time so sorting within the same date is deterministic
             $orderColumn = 'a.appodate';
+            $orderClause = "a.appodate $sortOrder, a.appointment_time $sortOrder";
             break;
         
         case 'dentists':
-            $baseQuery = "SELECT * FROM doctor";
+            // Build branch list by combining doctor's primary branch and any mapped branches
+            $baseQuery = "SELECT d.*, COALESCE(bl.branch_list, '(Unassigned)') AS branch FROM doctor d LEFT JOIN (
+                SELECT mb.docid, GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ', ') AS branch_list
+                FROM (
+                    SELECT docid, branch_id FROM doctor WHERE branch_id IS NOT NULL
+                    UNION ALL
+                    SELECT docid, branch_id FROM doctor_branches
+                ) mb
+                JOIN branches b ON mb.branch_id = b.id
+                GROUP BY mb.docid
+            ) bl ON bl.docid = d.docid";
             $where = [];
+            if ($restrictedBranchId > 0) {
+                $where[] = "(d.branch_id = $restrictedBranchId OR d.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+            }
             if ($statusFilter !== 'all') {
-                $where[] = "status = '" . $database->real_escape_string($statusFilter) . "'";
+                $where[] = "d.status = '" . $database->real_escape_string($statusFilter) . "'";
             }
             if (!empty($searchTerm)) {
                 $searchTerm = $database->real_escape_string($searchTerm);
-                $where[] = "docname LIKE '%$searchTerm%'";
+                $where[] = "d.docname LIKE '%$searchTerm%'";
             }
             if (!empty($where)) {
                 $baseQuery .= " WHERE " . implode(" AND ", $where);
             }
-            
-            $countQuery = "SELECT COUNT(*) FROM doctor";
+
+            $countQuery = "SELECT COUNT(*) FROM doctor d";
             if (!empty($where)) {
                 $countQuery .= " WHERE " . implode(" AND ", $where);
             }
-            
-            $orderColumn = 'docid';
+
+            $orderColumn = 'd.docid';
             break;
         
         case 'patients':
-            $baseQuery = "SELECT * FROM patient";
+            // Build branch list for patients combining primary branch and patient_branches mapping
+            $baseQuery = "SELECT p.*, COALESCE(bl.branch_list, '(Unassigned)') AS branch FROM patient p LEFT JOIN (
+                SELECT mb.pid, GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ', ') AS branch_list
+                FROM (
+                    SELECT pid, branch_id FROM patient WHERE branch_id IS NOT NULL
+                    UNION ALL
+                    SELECT pid, branch_id FROM patient_branches
+                ) mb
+                JOIN branches b ON mb.branch_id = b.id
+                GROUP BY mb.pid
+            ) bl ON bl.pid = p.pid";
             $where = [];
+            if ($restrictedBranchId > 0) {
+                $where[] = "(p.branch_id = $restrictedBranchId OR EXISTS(SELECT 1 FROM patient_branches pb WHERE pb.pid = p.pid AND pb.branch_id = $restrictedBranchId))";
+            }
             if ($statusFilter !== 'all') {
-                $where[] = "status = '" . $database->real_escape_string($statusFilter) . "'";
+                $where[] = "p.status = '" . $database->real_escape_string($statusFilter) . "'";
             }
             if (!empty($searchTerm)) {
                 $searchTerm = $database->real_escape_string($searchTerm);
-                $where[] = "pname LIKE '%$searchTerm%'";
+                $where[] = "p.pname LIKE '%$searchTerm%'";
             }
             if (!empty($where)) {
                 $baseQuery .= " WHERE " . implode(" AND ", $where);
             }
-            
-            $countQuery = "SELECT COUNT(*) FROM patient";
+
+            $countQuery = "SELECT COUNT(*) FROM patient p";
             if (!empty($where)) {
                 $countQuery .= " WHERE " . implode(" AND ", $where);
             }
-            
-            $orderColumn = 'pid';
+
+            $orderColumn = 'p.pid';
             break;
+    }
+
+    // Ensure we have an ORDER clause for all types (appointments sets $orderClause earlier)
+    if (!isset($orderClause) || trim($orderClause) === '') {
+        // Fallback to ordering by the determined order column and provided sort order
+        $orderClause = $orderColumn . ' ' . $sortOrder;
     }
 
     // Execute queries
     $total = $database->query($countQuery)->fetch_row()[0];
     $totalPages = ceil($total / $rowsPerPage);
     $offset = ($page - 1) * $rowsPerPage;
-    $result = $database->query("$baseQuery ORDER BY $orderColumn $sortOrder LIMIT $rowsPerPage OFFSET $offset");
+    $result = $database->query("$baseQuery ORDER BY $orderClause LIMIT $rowsPerPage OFFSET $offset");
 
     // Build HTML
     $html = '<table class="table"><thead><tr><th class="checkbox-column"><input type="checkbox" class="select-all"></th>';
     switch ($type) {
-        case 'appointments': $html .= '<th>Patient</th><th>Dentist</th><th>Procedure</th><th>Date & Time</th><th>Status</th>'; break;
-        case 'dentists': $html .= '<th>Name</th><th>Email</th><th>Phone</th><th>Status</th>'; break;
-        case 'patients': $html .= '<th>Name</th><th>Email</th><th>Address</th><th>Birthdate</th><th>Status</th>'; break;
+        case 'appointments': $html .= '<th>Patient</th><th>Dentist</th><th>Procedure</th><th>Branch</th><th>Date & Time</th><th>Status</th>'; break;
+        case 'dentists': $html .= '<th>Name</th><th>Email</th><th>Branch</th><th>Phone</th><th>Status</th>'; break;
+        case 'patients': $html .= '<th>Name</th><th>Email</th><th>Branch</th><th>Address</th><th>Birthdate</th><th>Status</th>'; break;
     }
     $html .= '</tr></thead><tbody>';
 
@@ -145,24 +212,32 @@ if (isset($_GET['ajax'])) {
         
         switch ($type) {
             case 'appointments':
+                // Prefer stacked procedures list; fallback to primary procedure name
+                $procDisplay = trim($row['procedures_list'] ?? '') !== '' ? $row['procedures_list'] : ($row['primary_procedure'] ?? 'N/A');
+                $branchDisplay = isset($row['branch']) && $row['branch'] !== null ? $row['branch'] : '(Unassigned)';
                 $html .= '<td>' . htmlspecialchars($row['pname'] ?? 'N/A') . '</td>'
-                      . '<td>' . htmlspecialchars($row['docname'] ?? 'N/A') . '</td>'
-                      . '<td>' . htmlspecialchars($row['procedure_name'] ?? 'N/A') . '</td>'
-                      . '<td>' . htmlspecialchars(($row['appodate'] ?? '') . ' @ ' . substr($row['appointment_time'] ?? '', 0, 5)) . '</td>'
-                      . '<td>' . ucfirst($row['status']) . '</td>';
+                    . '<td>' . htmlspecialchars($row['docname'] ?? 'N/A') . '</td>'
+                    . '<td>' . htmlspecialchars($procDisplay) . '</td>'
+                    . '<td>' . htmlspecialchars($branchDisplay) . '</td>'
+                    . '<td>' . htmlspecialchars(($row['appodate'] ?? '') . ' @ ' . substr($row['appointment_time'] ?? '', 0, 5)) . '</td>'
+                    . '<td data-status="' . htmlspecialchars($row['status']) . '">' . ucfirst($row['status']) . '</td>';
                 break;
             case 'dentists':
+                $branchDisplay = isset($row['branch']) && $row['branch'] !== null ? $row['branch'] : '(Unassigned)';
                 $html .= '<td>' . htmlspecialchars($row['docname']) . '</td>'
-                      . '<td>' . htmlspecialchars($row['docemail']) . '</td>'
-                      . '<td>' . htmlspecialchars($row['doctel']) . '</td>'
-                      . '<td>' . ucfirst($row['status']) . '</td>';
+                    . '<td>' . htmlspecialchars($row['docemail']) . '</td>'
+                    . '<td>' . htmlspecialchars($branchDisplay) . '</td>'
+                    . '<td>' . htmlspecialchars($row['doctel']) . '</td>'
+                    . '<td>' . ucfirst($row['status']) . '</td>';
                 break;
             case 'patients':
+                $branchDisplay = isset($row['branch']) && $row['branch'] !== null ? $row['branch'] : '(Unassigned)';
                 $html .= '<td>' . htmlspecialchars($row['pname']) . '</td>'
-                      . '<td>' . htmlspecialchars($row['pemail']) . '</td>'
-                      . '<td>' . htmlspecialchars(substr($row['paddress'] ?? '', 0, 30)) . '</td>'
-                      . '<td>' . htmlspecialchars($row['pdob'] ?? 'N/A') . '</td>' 
-                      . '<td>' . ucfirst($row['status']) . '</td>';
+                    . '<td>' . htmlspecialchars($row['pemail']) . '</td>'
+                    . '<td>' . htmlspecialchars($branchDisplay) . '</td>'
+                    . '<td>' . htmlspecialchars(substr($row['paddress'] ?? '', 0, 30)) . '</td>'
+                    . '<td>' . htmlspecialchars($row['pdob'] ?? 'N/A') . '</td>' 
+                    . '<td>' . ucfirst($row['status']) . '</td>';
                 break;
         }
         $html .= '</tr>';
@@ -183,16 +258,51 @@ if (isset($_GET['ajax'])) {
     exit();
 }
 
-$appointment_count = $database->query(
-    "SELECT COUNT(*) FROM (
-        SELECT appoid FROM appointment WHERE status = 'completed'
-        UNION ALL
-        SELECT appoid FROM appointment_archive WHERE status IN ('cancelled', 'rejected')
-    ) AS combined"
-)->fetch_row()[0];
+// Restrict counts when admin is limited to a branch
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+// Detect whether appointment_archive stores branch_id (schema can vary)
+$archiveHasBranch = false;
+try {
+    $colCheck = $database->query("SHOW COLUMNS FROM appointment_archive LIKE 'branch_id'");
+    if ($colCheck && $colCheck->num_rows > 0) {
+        $archiveHasBranch = true;
+    }
+} catch (Throwable $e) {
+    $archiveHasBranch = false;
+}
 
-$dentist_count = $database->query("SELECT COUNT(*) FROM doctor")->fetch_row()[0];
-$patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0];
+if ($restrictedBranchId > 0) {
+    if ($archiveHasBranch) {
+        $appointment_count = $database->query(
+            "SELECT COUNT(*) FROM (
+                SELECT a.appoid FROM appointment a JOIN doctor d ON a.docid = d.docid WHERE a.status = 'completed' AND COALESCE(a.branch_id, d.branch_id) = $restrictedBranchId
+                UNION ALL
+                SELECT a.appoid FROM appointment_archive a JOIN doctor d ON a.docid = d.docid WHERE a.status IN ('cancelled', 'rejected') AND COALESCE(a.branch_id, d.branch_id) = $restrictedBranchId
+            ) AS combined"
+        )->fetch_row()[0];
+    } else {
+        // appointment_archive doesn't have branch info; fall back to counting only active appointment table rows where effective branch equals restricted
+        $appointment_count = $database->query(
+            "SELECT COUNT(*) FROM (
+                SELECT a.appoid FROM appointment a JOIN doctor d ON a.docid = d.docid WHERE a.status = 'completed' AND COALESCE(a.branch_id, d.branch_id) = $restrictedBranchId
+            ) AS combined"
+        )->fetch_row()[0];
+    }
+
+    $dentist_count = $database->query("SELECT COUNT(*) FROM doctor WHERE (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))")->fetch_row()[0];
+    $patient_count = $database->query("SELECT COUNT(*) FROM patient WHERE branch_id = $restrictedBranchId")->fetch_row()[0];
+} else {
+    $appointment_count = $database->query(
+        "SELECT COUNT(*) FROM (
+            SELECT appoid FROM appointment WHERE status = 'completed'
+            UNION ALL
+            SELECT appoid FROM appointment_archive WHERE status IN ('cancelled', 'rejected')
+        ) AS combined"
+    )->fetch_row()[0];
+
+    $dentist_count = $database->query("SELECT COUNT(*) FROM doctor")->fetch_row()[0];
+    $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0];
+}
 ?>
 
 <!DOCTYPE html>
@@ -205,6 +315,7 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
     <link rel="stylesheet" href="../css/main.css">
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Archive - IHeartDentistDC</title>
     <style>
         .main-container {
@@ -521,8 +632,10 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
     </style>
 </head>
 <body>
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -533,7 +646,25 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                Secretary
+                <?php
+                    $roleLabel = 'Secretary';
+                    if (isset($_SESSION['user'])) {
+                        $curr = strtolower($_SESSION['user']);
+                        // Super Admin label for the primary admin account
+                        if ($curr === 'admin@edoc.com') {
+                            $roleLabel = 'Super Admin';
+                        } else if (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                            $branchLabels = [
+                                'adminbacoor@edoc.com' => 'Bacoor',
+                                'adminmakati@edoc.com' => 'Makati'
+                            ];
+                            if (isset($branchLabels[$curr])) {
+                                $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                            }
+                        }
+                    }
+                    echo $roleLabel;
+                ?>
                 </p>
             </div>
 
@@ -574,10 +705,12 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
                     <img src="../Media/Icon/Blue/folder.png" alt="Reports" class="nav-icon">
                     <span class="nav-label">Reports</span>
                 </a>
+                <?php if (empty($_SESSION['restricted_branch_id'])): ?>
                 <a href="settings.php" class="nav-item">
                     <img src="../Media/Icon/Blue/settings.png" alt="Settings" class="nav-icon">
                     <span class="nav-label">Settings</span>
                 </a>
+                <?php endif; ?>
             </div>
 
             <div class="log-out">
@@ -605,7 +738,7 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
                     <button class="tab-button active" data-type="appointments">Appointments (<?= $appointment_count ?>)</button>
                     <button class="tab-button" data-type="dentists">Dentists (<?= $dentist_count ?>)</button>
                     <button class="tab-button" data-type="patients">Patients (<?= $patient_count ?>)</button>
-                    <?php include('inc/sidebar-toggle.php'); ?>
+                    <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 </div>
 
                 <!-- Appointments Tab -->
@@ -629,6 +762,24 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
                                 <option value="cancelled">Cancelled</option>
                                 <option value="rejected">Rejected</option>
                             </select>
+                            <?php
+                            // Procedure filter dropdown
+                            $procRes = $database->query("SELECT procedure_id, procedure_name FROM procedures ORDER BY procedure_name ASC");
+                            ?>
+                            <select id="procedureFilter" class="rows-per-page" data-type="appointments" style="min-width:180px;">
+                                <option value="">All Procedures</option>
+                                <?php while ($procRes && $prow = $procRes->fetch_assoc()): ?>
+                                    <option value="<?= (int)$prow['procedure_id'] ?>"><?= htmlspecialchars($prow['procedure_name']) ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                            <label style="display:flex;gap:6px;align-items:center;">
+                                <span style="font-size:13px;color:#555;">From</span>
+                                <input type="date" id="dateFrom" class="form-input" style="padding:6px;border-radius:4px;"> 
+                            </label>
+                            <label style="display:flex;gap:6px;align-items:center;">
+                                <span style="font-size:13px;color:#555;">To</span>
+                                <input type="date" id="dateTo" class="form-input" style="padding:6px;border-radius:4px;">
+                            </label>
                             <button class="generate-pdf btn-primary" data-type="appointments">Generate PDF</button>
                         </div>
                         
@@ -707,6 +858,43 @@ $patient_count = $database->query("SELECT COUNT(*) FROM patient")->fetch_row()[0
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+// Expose restricted branch id (if any) to PDF generator
+var RESTRICTED_BRANCH_ID = <?php echo $restrictedBranchId > 0 ? (int)$restrictedBranchId : '0'; ?>;
+document.addEventListener('DOMContentLoaded', function () {
+    const hamburger = document.getElementById('hamburgerAdmin');
+    const sidebar = document.getElementById('adminSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+
+    if (hamburger && sidebar && overlay) {
+        const closeSidebar = () => {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            hamburger.setAttribute('aria-expanded', 'false');
+        };
+
+        const openSidebar = () => {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            hamburger.setAttribute('aria-expanded', 'true');
+        };
+
+        hamburger.addEventListener('click', function () {
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+
+        overlay.addEventListener('click', function () {
+            closeSidebar();
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeSidebar();
+        });
+    }
+});
 $(document).ready(function() {
     let currentTab = 'appointments';
     
@@ -716,6 +904,9 @@ $(document).ready(function() {
         const statusFilter = $(`.status-filter[data-type="${type}"]`).val();
         const sortOrder = $(`#${type}-content .sort-btn.active`).data('order') || 'DESC';
         const searchTerm = $('#searchInput').val();
+        const procedureId = $('#procedureFilter').val() || '';
+        const dateFrom = $('#dateFrom').val() || '';
+        const dateTo = $('#dateTo').val() || '';
         
         $.ajax({
             url: window.location.pathname,
@@ -728,7 +919,10 @@ $(document).ready(function() {
                 rows_per_page: rowsPerPage,
                 status: statusFilter,
                 sort: sortOrder,
-                search: searchTerm
+                search: searchTerm,
+                procedure_id: procedureId,
+                date_from: dateFrom,
+                date_to: dateTo
             },
             beforeSend: function() {
                 $(`#${type}-table`).html('<div class="loading-message">Loading...</div>');
@@ -896,22 +1090,35 @@ $(document).ready(function() {
         $(document).on('click', '.generate-pdf', function () {
             const type = $(this).data('type');
             const selected = $(`#${type}-table .row-checkbox:checked`).map((i, el) => el.value).get();
+            const procedureId = $('#procedureFilter').val() || '';
+            const dateFrom = $('#dateFrom').val() || '';
+            const dateTo = $('#dateTo').val() || '';
 
-            console.log("Selected IDs:", selected); 
-            console.log("Report Type:", type); 
+            console.log("Selected IDs:", selected);
+            console.log("Report Type:", type);
 
+            // If nothing selected, ask user whether to generate for all filtered results
             if (selected.length === 0) {
-                alert('Please select items to generate PDF');
-                return;
+                if (!confirm('No rows selected. Generate PDF for all appointments matching the current filters?')) {
+                    return;
+                }
             }
 
+            const sortVal = $(`#${type}-content .sort-btn.active`).data('order') || '';
             const form = $('<form>', { action: 'generate_pdf.php', method: 'POST' })
                 .append($('<input>', { type: 'hidden', name: 'report_type', value: type }))
-                .append($('<input>', { type: 'hidden', name: 'selected_ids', value: JSON.stringify(selected) }));
+                .append($('<input>', { type: 'hidden', name: 'selected_ids', value: JSON.stringify(selected) }))
+                .append($('<input>', { type: 'hidden', name: 'procedure_id', value: procedureId }))
+                .append($('<input>', { type: 'hidden', name: 'date_from', value: dateFrom }))
+                .append($('<input>', { type: 'hidden', name: 'date_to', value: dateTo }))
+                .append($('<input>', { type: 'hidden', name: 'search', value: $('#searchInput').val() }))
+                .append($('<input>', { type: 'hidden', name: 'status', value: $('.status-filter[data-type="appointments"]').val() }))
+                .append($('<input>', { type: 'hidden', name: 'sort', value: sortVal }))
+                .append($('<input>', { type: 'hidden', name: 'branch_id', value: RESTRICTED_BRANCH_ID }));
 
-            console.log("Form Data:", form.serialize()); 
+            console.log("Form Data:", form.serialize());
 
-            $('body').append(form).submit();
+            $('body').append(form);
             form.submit();
         });
 });

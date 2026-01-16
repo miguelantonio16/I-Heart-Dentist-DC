@@ -31,15 +31,45 @@ require_once($configFile);
 if (isset($_GET['id']) && isset($_GET['amount'])) {
     $appoid = $_GET['id'];
     $amount = (float)$_GET['amount']; // Ensure it's a number
+    $source = isset($_GET['source']) ? strtolower(trim($_GET['source'])) : 'balance'; // 'reservation' or 'balance'
 
     // SAFETY: Ensure amount is at least 100 PHP (PayMongo minimum)
     if ($amount < 100) {
         die("Error: Invalid amount (₱$amount). The balance might be zero or already paid.");
     }
 
-    $description = "Balance Payment for Appointment ID #$appoid";
-    $success_url = "http://localhost/IHeartDentistDC/patient/payment_success.php?id=$appoid&type=balance";
-    $cancel_url = "http://localhost/IHeartDentistDC/patient/my_appointment.php?error=cancelled";
+    // Describe payment based on source
+    $description = ($source === 'reservation')
+        ? "Reservation Fee Payment for Appointment ID #$appoid"
+        : "Balance Payment for Appointment ID #$appoid";
+    // Build success/cancel URLs from actual filesystem path to avoid hard-coded folder assumptions causing 404.
+    $scheme = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http');
+    $host = $_SERVER['HTTP_HOST'];
+    $successFile = realpath(__DIR__ . '/payment_success.php');
+    $myAppointmentFile = realpath(__DIR__ . '/my_appointment.php');
+    $docRoot = rtrim(realpath($_SERVER['DOCUMENT_ROOT']), DIRECTORY_SEPARATOR);
+    $successRel = $successFile ? str_replace($docRoot, '', $successFile) : '/patient/payment_success.php';
+    $myApptRel = $myAppointmentFile ? str_replace($docRoot, '', $myAppointmentFile) : '/patient/my_appointment.php';
+    // Normalize backslashes to forward slashes (Windows paths)
+    $successRel = str_replace('\\', '/', $successRel);
+    $myApptRel = str_replace('\\', '/', $myApptRel);
+    // Ensure leading slash
+    if ($successRel[0] !== '/') { $successRel = '/' . $successRel; }
+    if ($myApptRel[0] !== '/') { $myApptRel = '/' . $myApptRel; }
+    // Build success/cancel URLs based on payment source
+    if ($source === 'reservation') {
+        // Send back to payment_success with type=reservation; cancel to My Booking and include appoid
+        $success_url = $scheme . '://' . $host . $successRel . "?id=$appoid&type=reservation";
+        // Compute My Booking path
+        $myBookingFile = realpath(__DIR__ . '/my_booking.php');
+        $myBookingRel = $myBookingFile ? str_replace($docRoot, '', $myBookingFile) : '/patient/my_booking.php';
+        $myBookingRel = str_replace('\\', '/', $myBookingRel);
+        if ($myBookingRel[0] !== '/') { $myBookingRel = '/' . $myBookingRel; }
+        $cancel_url  = $scheme . '://' . $host . $myBookingRel . "?error=cancelled&appoid=$appoid";
+    } else {
+        $success_url = $scheme . '://' . $host . $successRel . "?id=$appoid&type=balance";
+        $cancel_url  = $scheme . '://' . $host . $myApptRel . "?error=cancelled";
+    }
 
     if (function_exists('createPayMongoSession')) {
         $result = createPayMongoSession($amount, $description, $success_url, $cancel_url);
@@ -50,12 +80,14 @@ if (isset($_GET['id']) && isset($_GET['amount'])) {
         } else {
             $err = isset($result['errors'][0]['detail']) ? $result['errors'][0]['detail'] : 'Unknown API Error';
             echo "<h3>Payment Gateway Error</h3><p>$err</p>";
-            echo "<a href='my_appointment.php'>Go Back</a>";
+            $fallback = ($source === 'reservation') ? 'my_booking.php' : 'my_appointment.php';
+            echo "<a href='$fallback'>Go Back</a>";
         }
     } else {
         die("Error: Payment function missing.");
     }
-} else {
-    header("Location: my_appointment.php");
+    } else {
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('my_appointment.php');
 }
 ?>

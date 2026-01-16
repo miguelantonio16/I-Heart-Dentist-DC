@@ -15,6 +15,7 @@ if ($_SESSION['usertype'] != 'a') {
 
 // Include connection file with error handling
 require_once __DIR__ . "/../connection.php";  // Use absolute path
+require_once __DIR__ . '/../inc/redirect_helper.php';
 
 // Verify connection was established
 if (!isset($database) || !($database instanceof mysqli)) {
@@ -108,11 +109,11 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 
     if ($action == 'accept') {
         $database->query("UPDATE appointment SET status='appointment' WHERE appoid='$id'") or die("Update failed: " . $database->error);
-        header("Location: booking.php");
+        redirect_with_context('booking.php');
         exit();
     } elseif ($action == 'reject') {
         $database->query("DELETE FROM appointment WHERE appoid='$id'") or die("Delete failed: " . $database->error);
-        header("Location: booking.php");
+        redirect_with_context('booking.php');
         exit();
     }
 }
@@ -538,7 +539,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         
         <div class="content-area">
             <div class="content">
-                <?php include('inc/sidebar-toggle.php'); ?>
+                <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 <div class="main-section">
                     <!-- search bar -->
                     <div class="search-container">
@@ -843,11 +844,13 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                                     appointment.appodate,
                                     appointment.appointment_time,
                                     patient.pname as patient_name,
-                                    doctor.docname as doctor_name
+                                    doctor.docname as doctor_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
                                 INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
                                 INNER JOIN patient ON appointment.pid = patient.pid
                                 INNER JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
                                     AND appointment.appodate >= '$today'
@@ -865,6 +868,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                                             htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
                                             ' • ' .
                                             htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
+                                            (!empty($appointment['branch_name']) ? (' - ' . htmlspecialchars($appointment['branch_name'])) : '') .
                                         '</p>
                                     </div>';
                                 }

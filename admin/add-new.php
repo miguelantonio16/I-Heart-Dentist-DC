@@ -22,7 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     // Check if passwords match
     if ($password != $cpassword) {
-        header("location: dentist.php?action=add&error=2");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'add', 'error' => 2]);
         exit;
     }
     
@@ -30,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $sql = "SELECT * FROM webuser WHERE email = '$email'";
     $result = $database->query($sql);
     if ($result->num_rows > 0) {
-        header("location: dentist.php?action=add&error=1");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'add', 'error' => 1]);
         exit;
     }
     
@@ -61,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Move the uploaded file to the directory
         if (!move_uploaded_file($photo_tmp, $upload_dir . $photo_new_name)) {
-            header("location: dentist.php?action=add&error=3");
+            require_once __DIR__ . '/../inc/redirect_helper.php';
+            redirect_with_context('dentist.php', ['action' => 'add', 'error' => 3]);
             exit;
         }
     }
@@ -87,13 +90,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Commit transaction
         $database->commit();
-        header("location: dentist.php?action=add&error=4");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'add', 'error' => 4]);
     } catch (Exception $e) {
         // Rollback transaction on error
         $database->rollback();
-        header("location: dentist.php?action=add&error=3");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'add', 'error' => 3]);
     }
 } else {
-    header("location: dentist.php?action=add&error=3");
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('dentist.php', ['action' => 'add', 'error' => 3]);
 }
 ?>

@@ -64,7 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 // Content
                 $mail->isHTML(true);
                 $mail->Subject = 'Password Reset Request';
-                $reset_link = "http://localhost/IHeartDentistDC/patient/reset-password.php?token=$token";
+                // Build reset link using configured BASE_URL
+                $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
+                $reset_link = $base . '/patient/reset-password.php?token=' . urlencode($token);
                 $mail->Body = "Hi {$patient['pname']},<br><br>"
                     . "We received a request to reset your password. Click the link below to reset it:<br><br>"
                     . "<a href='$reset_link'>Reset Password</a><br><br>"

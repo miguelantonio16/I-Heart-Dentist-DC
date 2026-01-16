@@ -38,6 +38,8 @@
     <link rel="stylesheet" href="../../css/animations.css">
     <link rel="stylesheet" href="../../css/main.css">
     <link rel="stylesheet" href="../../css/dashboard.css">
+    <link rel="stylesheet" href="../../css/overrides.css">
+    <link rel="stylesheet" href="../../css/responsive-admin.css">
     <!-- Select2 for improved selects -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -63,7 +65,7 @@
         }
 
         #calendar{
-            height: 82.2%;
+            height: auto !important; /* allow FullCalendar to size rows */
         }
 
         /* Confirmation modal tweaks */
@@ -101,7 +103,9 @@
     </style>
 </head>
 
-<body>
+<body class="patient-calendar">
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <?php
     date_default_timezone_set('Asia/Singapore');
     session_start();
@@ -129,6 +133,13 @@
     // Get notifications
     $notifications = $database->query("SELECT * FROM notifications WHERE user_id = '$userid' AND user_type = 'p' ORDER BY created_at DESC");
 
+    // Handle payment cancellation cleanup: remove pending reservation that wasn't paid
+    if (isset($_GET['error']) && $_GET['error'] === 'cancelled' && isset($_GET['appoid'])) {
+        $appoid = intval($_GET['appoid']);
+        // Only delete if still pending_reservation & belongs to this patient
+        $database->query("DELETE FROM appointment WHERE appoid='$appoid' AND pid='$userid' AND status='pending_reservation'");
+    }
+
     $procedures = $database->query("SELECT * FROM procedures");
     $procedure_options = '';
     while ($procedure = $procedures->fetch_assoc()) {
@@ -150,17 +161,26 @@
         $page = 1;
     }
     $start_from = ($page - 1) * $results_per_page;
+    // Ensure branch selection is available before building queries
+    $selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : (isset($userfetch['branch_id']) ? intval($userfetch['branch_id']) : 0);
     $search = "";
     $sort_param = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
     $sort_order = ($sort_param === 'oldest') ? 'DESC' : 'ASC';
 
     if (isset($_GET['search'])) {
         $search = $_GET['search'];
-        $query = "SELECT * FROM doctor WHERE status='active' AND (docname LIKE '%$search%' OR docemail LIKE '%$search%' OR doctel LIKE '%$search%') ORDER BY docname $sort_order LIMIT $start_from, $results_per_page";
-        $count_query = "SELECT COUNT(*) as total FROM doctor WHERE status='active' AND (docname LIKE '%$search%' OR docemail LIKE '%$search%' OR doctel LIKE '%$search%')";
+        $query = "SELECT * FROM doctor WHERE status='active'" .
+                 ($selected_branch > 0 ? " AND (branch_id = $selected_branch OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id = $selected_branch))" : "") .
+                 " AND (docname LIKE '%$search%' OR docemail LIKE '%$search%' OR doctel LIKE '%$search%') ORDER BY docname $sort_order LIMIT $start_from, $results_per_page";
+        $count_query = "SELECT COUNT(DISTINCT docid) as total FROM doctor WHERE status='active'" .
+                       ($selected_branch > 0 ? " AND (branch_id = $selected_branch OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id = $selected_branch))" : "") .
+                       " AND (docname LIKE '%$search%' OR docemail LIKE '%$search%' OR doctel LIKE '%$search%')";
     } else {
-        $query = "SELECT * FROM doctor WHERE status='active' ORDER BY docname $sort_order LIMIT $start_from, $results_per_page";
-        $count_query = "SELECT COUNT(*) as total FROM doctor WHERE status='active'";
+        $query = "SELECT * FROM doctor WHERE status='active'" .
+                 ($selected_branch > 0 ? " AND (branch_id = $selected_branch OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id = $selected_branch))" : "") .
+                 " ORDER BY docname $sort_order LIMIT $start_from, $results_per_page";
+        $count_query = "SELECT COUNT(DISTINCT docid) as total FROM doctor WHERE status='active'" .
+                       ($selected_branch > 0 ? " AND (branch_id = $selected_branch OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id = $selected_branch))" : "");
     }
 
     $result = $database->query($query);
@@ -176,7 +196,7 @@
     $currentDay = date('j');
 
     // Branch filter (optional). Default to the logged-in patient's branch if available
-    $selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : (isset($userfetch['branch_id']) ? intval($userfetch['branch_id']) : 0);
+    // (already initialized above to avoid undefined variable warnings)
     $branches_result = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
     $branch_options = '<option value="">All Branches</option>';
     while ($b = $branches_result->fetch_assoc()) {
@@ -184,11 +204,11 @@
         $branch_options .= '<option value="' . $b['id'] . '"' . $sel . '>' . htmlspecialchars($b['name']) . '</option>';
     }
 
-    // Load doctors, optionally filtered by branch
+    // Load doctors for dropdown, filtered by branch if selected
     if ($selected_branch > 0) {
-        $doctors = $database->query("SELECT docid, docname FROM doctor WHERE status = 'active' AND branch_id = $selected_branch");
+        $doctors = $database->query("SELECT DISTINCT docid, docname FROM doctor WHERE status = 'active' AND (branch_id = $selected_branch OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id = $selected_branch)) ORDER BY docname ASC");
     } else {
-        $doctors = $database->query("SELECT docid, docname FROM doctor WHERE status = 'active'");
+        $doctors = $database->query("SELECT docid, docname FROM doctor WHERE status = 'active' ORDER BY docname ASC");
     }
     $doctor_options = '';
     while ($doctor = $doctors->fetch_assoc()) {
@@ -196,7 +216,7 @@
     }
     ?>
     <div class="nav-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -294,23 +314,10 @@
                                 <div class="modal-body">
                                     <form action="save_event.php" method="POST">
                                         <div class="form-group">
-                                            <label for="event_name">Event Name</label>
-                                            <input type="text" name="event_name" id="event_name" class="form-control" placeholder="Enter your event name" required>
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="procedure">Procedure</label>
-                                            <select class="form-control" id="procedure" name="procedure" onchange="showProcedureDescription(this); updateProcedureInfo();" required>
-                                                <option value="">Select Procedure</option>
-                                                <?php echo $procedure_options; ?>
-                                            </select>
-                                            <div id="procedure-description" class="alert alert-info mt-2" style="display: none;">
-                                            </div>
+                                            <!-- Hidden event_name field: will be auto-populated from selected procedure -->
+                                            <input type="hidden" name="event_name" id="event_name" value="My Appointment">
                                         </div>
                                         <div class="form-row" style="display:flex;gap:12px;">
-                                            <div class="form-group" style="flex:1;">
-                                                <label>Procedure Price</label>
-                                                <div class="form-control" id="selectedProcedurePrice">-</div>
-                                            </div>
                                             <div class="form-group" style="flex:1;">
                                                 <label>Reservation Fee</label>
                                                 <div class="form-control" id="reservationFee">-</div>
@@ -326,7 +333,7 @@
                                         </div>
                                         <div class="form-group">
                                             <label for="appointment_time">Time</label>
-                                            <select class="form-control" id="appointment_time" name="appointment_time">
+                                                <select class="form-control" id="appointment_time" name="appointment_time" required>
                                                 <option value="09:00:00"> 9:00 AM - 9:30 AM</option>
                                                 <option value="09:30:00"> 9:30 AM - 10:00 AM</option>
                                                 <option value="10:00:00"> 10:00 AM - 10:30 AM</option>
@@ -364,18 +371,11 @@
                                 </div>
                                 <div class="modal-body">
                                     <div class="confirm-row">
-                                        <span class="confirm-label">Procedure:</span>
-                                        <span class="confirm-value" id="confirmProcedureName">-</span>
-                                    </div>
-                                    <div class="confirm-row">
-                                        <span class="confirm-label">Procedure Price:</span>
-                                        <span class="confirm-value" id="confirmProcedurePrice">-</span>
-                                    </div>
-                                    <div class="confirm-row">
                                         <span class="confirm-label">Reservation Fee (pay now):</span>
                                         <span class="confirm-value" id="confirmReservationAmount">-</span>
                                     </div>
-                                    <div class="confirm-row confirm-note">The reservation fee will be deducted from the total procedure price when your appointment is completed.</div>
+                                    <div class="confirm-row confirm-note">Procedure will be determined during clinic visit.</div>
+                                    <div class="confirm-row confirm-note">Note: The reservation fee will be deducted from your total bill.</div>
                                 </div>
                                 <div class="modal-footer">
                                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
@@ -491,38 +491,54 @@
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                WHERE
-                                    appointment.pid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
-                            ");
+                            $sql = "SELECT
+                                        a.appoid,
+                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                        a.appodate,
+                                        a.appointment_time,
+                                        d.docname as doctor_name,
+                                        b.name AS branch_name
+                                    FROM appointment a
+                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                    LEFT JOIN branches b ON d.branch_id = b.id
+                                    WHERE
+                                        a.pid = '$userid'
+                                        AND a.status = 'appointment'
+                                        AND a.appodate >= '$today'
+                                    GROUP BY a.appoid
+                                    ORDER BY a.appodate ASC, a.appointment_time ASC
+                                    LIMIT 3";
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            $upcomingAppointments = $database->query($sql);
+
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                    echo '<div class="appointment-item">';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') {
+                                        $datetime .= ' - ' . $branch;
+                                    }
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
+                                    echo '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                    <a href="calendar.php" class="schedule-btn">Schedule an appointment</a>
-                                </div>';
+                                echo '<div class="no-appointments">                                    <p>No upcoming appointments scheduled</p>                                    <a href="calendar.php" class="schedule-btn">Schedule an appointment</a>                                </div>';
                             }
                             ?>
                         </div>
@@ -607,13 +623,27 @@
         ];
 
         $('#appointment_time').empty();
+        // Placeholder option forces explicit user selection
+        $('#appointment_time').append('<option value="" disabled selected>Select Time</option>');
+
+        var selectedDate = $('#appointment_date').val();
+        var todayDate = moment().format('YYYY-MM-DD');
+        var nowTime = moment().format('HH:mm:ss');
 
         $.each(timeSlots, function (index, slot) {
             var option = $("<option></option>").val(slot.time).text(slot.label);
 
-            if (bookedTimes[slot.time] && bookedTimes[slot.time] >= 3) {
+            // Disable slot if at least one reservation/booking/appointment exists (single-capacity)
+            if (bookedTimes[slot.time] && bookedTimes[slot.time] >= 1) {
                 option.attr("disabled", "disabled");
                 option.css("background-color", "#F46E34");
+            }
+
+            // Disable past time slots for today
+            if (selectedDate === todayDate && slot.time <= nowTime) {
+                option.attr("disabled", "disabled");
+                option.css("background-color", "#d9d9d9");
+                option.css("color", "#777");
             }
 
             $('#appointment_time').append(option);
@@ -644,18 +674,46 @@
                     eventColor = item.color; // Fallback
                 }
 
+                // Determine final color respecting privacy rules: other patients' occupied slots use Timeslot Taken color (#F9A15D)
+                var finalColor;
+                var timeslotTakenColor = '#F9A15D';
+                var completedColor = '#BBBBBB';
+                if (!item.is_self && item.type !== 'non-working') {
+                    if (item.status === 'completed') {
+                        finalColor = completedColor; // keep grey for past completed
+                    } else {
+                        finalColor = timeslotTakenColor; // unified occupied slot color
+                    }
+                } else {
+                    if (item.type === 'non-working') {
+                        finalColor = '#F94144';
+                    } else if (item.status === 'appointment') {
+                        finalColor = '#0e8923'; // user's confirmed appointment
+                    } else if (item.status === 'completed') {
+                        finalColor = completedColor;
+                    } else {
+                        // booking / pending_reservation for self uses provided fallback (yellow)
+                        finalColor = item.color || '#F9C74F';
+                    }
+                }
+                // Skip rendering completed events from other patients entirely
+                if (!item.is_self && item.status === 'completed') {
+                    return; // do not add to events array
+                }
+                var eventTitle = result[i].title;
                 events.push({
                     event_id: result[i].appointment_id,
-                    title: result[i].title,
+                    title: eventTitle,
                     start: result[i].start,
                     end: result[i].end,
-                    color: eventColor,
-                    url: result[i].url,
+                    color: finalColor,
+                    url: null,
                     status: result[i].status,
                     procedure_name: item.procedure_name,
                     patient_name: item.patient_name,
                     dentist_name: item.dentist_name,
-                    type: item.type
+                    type: item.type,
+                    is_self: item.is_self === true
                 });
             });
 
@@ -700,11 +758,19 @@
                 $('#calendar').fullCalendar('destroy');
             }
 
+            // Configure FullCalendar; compact rows on desktop, roomy on mobile
+            var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
             $('#calendar').fullCalendar({
                 defaultView: 'month',
                 timeZone: 'local',
                 fixedWeekCount: false,
-                editable: true,
+                height: 'auto',
+                contentHeight: 'auto',
+                aspectRatio: isMobile ? 1.05 : 1.6,
+                editable: false, // prevent drag/drop & resize
+                eventStartEditable: false,
+                eventDurationEditable: false,
+                droppable: false,
                 selectable: true,
                 selectHelper: true,
                 select: function(start, end) {
@@ -728,7 +794,8 @@
                     }
 
                     $('#appointment_date').val(selectedDate);
-                    $('#event_name').val("Patient's Choice");
+                    // Initialize hidden event_name with default; will update when procedure chosen
+                    $('#event_name').val('My Appointment');
                     var today = moment().format('YYYY-MM-DD');
                     var maxAllowedDate = moment().add(2, 'months').format('YYYY-MM-DD');
                     var dayOfWeek = moment(start).day();
@@ -750,6 +817,11 @@
                 },
                 events: events,
                 eventRender: function(event, element, view) {
+                    // Make other patients' events unclickable for privacy
+                    if (!event.is_self && event.type !== 'non-working') {
+                        element.css('cursor', 'not-allowed');
+                        // Do not bind click handler
+                    } else {
                     element.on('click', function() {
                         if (event.type === 'non-working') {
                             return; // Do nothing
@@ -775,31 +847,40 @@
                             if (event.status === 'booking') {
                                 $('#confirm-booking').show();
                                 $('#cancel-appointment').show();
+                                // Hide pay now button for confirmed bookings
+                                $('#payNowBtn').hide();
                             } else if (event.status === 'appointment') {
                                 $('#confirm-booking').hide();
                                 $('#cancel-appointment').show();
+                                $('#payNowBtn').hide();
                             } else if (event.status === 'completed') {
                                 $('#confirm-booking').hide();
                                 $('#cancel-appointment').hide();
+                                $('#payNowBtn').hide();
+                            } else if (event.status === 'pending_reservation') {
+                                // Unpaid reservation: allow cancel + pay now
+                                $('#confirm-booking').hide();
+                                $('#cancel-appointment').show();
+                                $('#payNowBtn').show();
                             }
                         });
                         
                          $('#cancel-appointment').off('click').on('click', function() {
-                                    var confirmMessage = (event.status === 'booking')
-                                        ? "Are you sure you want to cancel this booking?"
-                                        : "Are you sure you want to cancel this appointment?";
+                                    var confirmMessage = "Are you sure you want to cancel this " +
+                                        (event.status === 'pending_reservation' ? 'pending reservation' : (event.status === 'booking' ? 'booking' : 'appointment')) + "?";
 
-                                    if (confirm(confirmMessage)) {
+                                        if (confirm(confirmMessage)) {
                                         $.ajax({
-                                            url: 'cancel_appointment.php',
+                                            url: (event.status === 'pending_reservation' ? '../cancel_pending_reservation.php' : 'cancel_appointment.php'),
                                             type: 'POST',
                                             data: { appoid: event.event_id },
                                             dataType: 'json',
                                             success: function (response) {
                                                 if (response && response.status) {
-                                                    alert(event.status === 'booking'
-                                                        ? "Booking cancelled successfully."
-                                                        : "Appointment cancelled successfully.");
+                                                    var okMsg = (event.status === 'pending_reservation')
+                                                        ? "Pending reservation cancelled successfully."
+                                                        : (event.status === 'booking' ? "Booking cancelled successfully." : "Appointment cancelled successfully.");
+                                                    alert(okMsg);
                                                     $('#appointmentModal').modal('hide');
                                                     location.reload();
                                                 } else {
@@ -819,8 +900,21 @@
                                 });
 
 
+                        // Configure Pay Now button for pending reservations (only for owner)
+                        if (event.status === 'pending_reservation' && event.is_self) {
+                            $('#payNowBtn').show();
+                            $('#payNowBtn').off('click').on('click', function() {
+                                var amount = <?php echo json_encode($reservation_fee); ?>;
+                                // Use parent folder path since this file is in /patient/calendar/
+                                window.location.href = '../pay_balance.php?id=' + encodeURIComponent(event.event_id) + '&amount=' + encodeURIComponent(amount) + '&source=reservation';
+                            });
+                        } else {
+                            $('#payNowBtn').hide();
+                        }
+
                         $('#appointmentModal').modal('show');
                     });
+                    }
 
                     element.css('background-color', event.color);
                     element.css('border-color', event.color);
@@ -847,27 +941,43 @@
                 }
             });
         },
-        error: function(xhr, status) {
-            alert("Error fetching events.");
+        error: function(xhr, status, error) {
+            var msg = "Error fetching events. Status: " + xhr.status;
+            if (error) msg += " (" + error + ")";
+            if (xhr.responseText) {
+                msg += "\nResponse: " + xhr.responseText.substring(0,300);
+            }
+            alert(msg);
+            console.error('Calendar events fetch failed:', xhr.status, status, error, xhr.responseText);
         }
     });
 
                 }
 
                 function save_event() {
+    // Auto-fill event_name from selected procedure text (or generic fallback)
+    var procText = $('#procedure option:selected').text();
+    if (procText && procText.trim() !== '' && procText.toLowerCase() !== 'select procedure') {
+        $('#event_name').val(procText.trim());
+    } else {
+        $('#event_name').val('My Appointment');
+    }
     var event_name = $("#event_name").val();
-    var procedure = $("#procedure").val();
+    // Procedure selection removed from patient flow
+    var procedure = null;
     var patient_name = $("#patient_name").val();
     var appointment_date = $("#appointment_date").val();
     var appointment_time = $("#appointment_time").val();
     var docid = $('#docid').val();
 
-    if (!event_name || !procedure || !appointment_date || !appointment_time || !docid) {
-        alert("Please enter all required details.");
+    // Validate only date, time, and doctor now
+    if (!appointment_date || !appointment_time || !docid) {
+        alert("Please select a date, time slot, and dentist.");
         return false;
     }
 
-    var submitButton = $('.btn-primary');
+    // Target only the payment progression button, not all .btn-primary buttons
+    var submitButton = $('#proceedPaymentBtn');
     submitButton.prop('disabled', true);
     submitButton.text('Processing Payment...');
 
@@ -881,7 +991,8 @@
             patient_name: patient_name,
             appointment_date: appointment_date,
             appointment_time: appointment_time,
-            docid: docid
+            docid: docid,
+            custom_price: $('#customPrice').val()
         },
         success: function (response) {
             if (response.status === true) {
@@ -907,78 +1018,48 @@
     });
 }
 
-                function showProcedureDescription(select) {
-                    var description = select.options[select.selectedIndex].getAttribute('data-description');
-                    var descDiv = document.getElementById('procedure-description');
-
-                    if (description) {
-                        descDiv.innerHTML = description;
-                        descDiv.style.display = 'block';
-                    } else {
-                        descDiv.style.display = 'none';
-                    }
-                }
-
-                // Update displayed procedure price and reservation fee when selection changes
-                function updateProcedureInfo() {
-                    var sel = document.getElementById('procedure');
-                    if (!sel) return;
-                    var price = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute('data-price') : null;
-                    var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '-';
-                    var reservationFee = <?php echo json_encode($reservation_fee); ?>;
-
-                    var priceEl = document.getElementById('selectedProcedurePrice');
-                    var resEl = document.getElementById('reservationFee');
-                    if (priceEl) priceEl.innerText = (price !== null && price !== '') ? formatMoney(parseFloat(price)) : '-';
-                    if (resEl) resEl.innerText = formatMoney(parseFloat(reservationFee));
-                }
+                // (Procedure selection removed) Helper retained only for money formatting.
 
                 function formatMoney(num) {
                     if (isNaN(num)) return '-';
                     return '₱' + Number(num).toFixed(2);
                 }
 
-                // Show confirmation modal populated with values
+                // Show confirmation modal populated with reservation fee only
                 function showConfirmModal() {
-                    var sel = document.getElementById('procedure');
-                    if (!sel || !sel.value) {
-                        alert('Please select a procedure.');
+                    var timeVal = $('#appointment_time').val();
+                    if (!timeVal || timeVal === '') {
+                        alert('Please select a time slot before confirming.');
                         return;
                     }
-                    var name = sel.options[sel.selectedIndex].text;
-                    var price = sel.options[sel.selectedIndex].getAttribute('data-price') || 0;
                     var reservationFee = <?php echo json_encode($reservation_fee); ?>;
-
-                    document.getElementById('confirmProcedureName').innerText = name;
-                    document.getElementById('confirmProcedurePrice').innerText = formatMoney(parseFloat(price));
                     document.getElementById('confirmReservationAmount').innerText = formatMoney(parseFloat(reservationFee));
-
-                    // show modal
                     $('#confirmReservationModal').modal('show');
                 }
 
                 // wire up buttons when modal is ready
                 $(document).ready(function () {
-                    // initialize values
-                    updateProcedureInfo();
-
-                    $('#procedure').on('change', function () {
-                        updateProcedureInfo();
-                    });
+                    // Initialize reservation fee display (procedure UI removed)
+                    var initialReservationFee = <?php echo json_encode($reservation_fee); ?>;
+                    $('#reservationFee').text(formatMoney(parseFloat(initialReservationFee)));
 
                     $('#openConfirmBtn').on('click', function (e) {
                         e.preventDefault();
-                        // Show a brief confirmation summary before proceeding to payment
-                        var proc = $('#procedure').val();
-                        if (!proc) {
-                            alert('Please select a procedure before confirming.');
+                        var timeVal = $('#appointment_time').val();
+                        if (!timeVal || timeVal === '') {
+                            alert('Please select a time slot before confirming.');
                             return;
                         }
-                        updateProcedureInfo();
                         showConfirmModal();
                     });
 
                     $('#proceedPaymentBtn').on('click', function () {
+                        // Final guard: ensure time selected
+                        var timeVal = $('#appointment_time').val();
+                        if (!timeVal || timeVal === '') {
+                            alert('Please select a time slot before proceeding to payment.');
+                            return;
+                        }
                         // Close confirmation modal and submit
                         $('#confirmReservationModal').modal('hide');
                         // submit via existing save_event which calls save_event() AJAX
@@ -1154,7 +1235,6 @@ function markAllAsRead() {
                         </button>
                     </div>
                     <div class="modal-body">
-                        <p><strong>Procedure:</strong> <span id="modalProcedureName"></span></p>
                         <p><strong>Patient:</strong> <span id="modalPatientName"></span></p>
                         <p><strong>Dentist:</strong> <span id="modalDentistName"></span></p>
                         <p><strong>Date:</strong> <span id="modalDate"></span></p>
@@ -1162,12 +1242,42 @@ function markAllAsRead() {
                         <p><strong>Status:</strong> <span id="modalStatus"></span></p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-danger" id="cancel-appointment">Cancel</button>
-                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        <!-- Pay Now button for pending reservations -->
+                        <button type="button" class="btn btn-primary" id="payNowBtn" style="display:none;">Pay Now</button>
+                        <button type="button" class="btn btn-danger" id="cancel-appointment" style="margin-left:8px;">Cancel</button>
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal" style="margin-left:8px;">Close</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+<script>
+// Mobile sidebar toggle with overlay and accessibility
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('sidebarToggle');
+    var sidebar = document.getElementById('adminSidebar');
+    var overlay = document.getElementById('sidebarOverlay');
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (toggleBtn && sidebar && overlay) {
+        toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+        });
+        overlay.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+    }
+});
+</script>
 </body>
 </html>

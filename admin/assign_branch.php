@@ -7,6 +7,15 @@ if (!isset($_SESSION['user']) || $_SESSION['usertype'] !== 'a') {
 
 require_once '../connection.php';
 
+// Prevent branch-restricted admins from using this page directly
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+if ($restrictedBranchId > 0) {
+    // Hide/deny access for restricted users (they should not assign branches)
+    http_response_code(403);
+    echo '<div style="padding:20px;font-family:Arial,Helvetica,sans-serif;">Access denied.</div>';
+    exit;
+}
+
 $csrf = $_SESSION['csrf_token'] ?? bin2hex(random_bytes(16));
 $_SESSION['csrf_token'] = $csrf;
 

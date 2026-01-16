@@ -1,7 +1,4 @@
 <?php
-$hostname = "localhost";
-$username = "root";
-$password = "";  
-$database = "sdmc";   
-$con=mysqli_connect($hostname,$username,$password,$database);    
-?>   
+require_once __DIR__ . '/../../connection.php';
+$con = $database;
+?>

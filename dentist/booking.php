@@ -13,6 +13,7 @@ if ($_SESSION['usertype'] != 'd') {
 }
 
 include("../connection.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
 date_default_timezone_set('Asia/Singapore');
 
 $useremail = $_SESSION["user"];
@@ -52,23 +53,24 @@ $start_from = ($page - 1) * $results_per_page;
 
 // Base query with search functionality
 $sqlmain = "SELECT
-            appointment.appoid,
-            procedures.procedure_name,
-            patient.pname,
-            patient.pid,
-            appointment.appodate,
-            appointment.appointment_time,
-            patient.profile_pic
-        FROM appointment
-        INNER JOIN patient ON appointment.pid = patient.pid
-        INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-        WHERE appointment.docid = '$userid'
-          AND appointment.status = 'booking'";
+                        appointment.appoid,
+                        patient.pname,
+                        patient.pid,
+                        appointment.appodate,
+                        appointment.appointment_time,
+                        patient.profile_pic,
+                        b.name AS branch_name
+                FROM appointment
+                INNER JOIN patient ON appointment.pid = patient.pid
+                LEFT JOIN branches b ON patient.branch_id = b.id
+                WHERE appointment.docid = '$userid'
+                    AND appointment.status = 'booking'";
 
 // Add search if exists
 if (isset($_GET['search']) && $_GET['search'] != "") {
     $search = $_GET['search'];
-    $sqlmain .= " AND (patient.pname LIKE '%$search%' OR procedures.procedure_name LIKE '%$search%')";
+    // Only search by patient name here; procedure search removed from dentist view
+    $sqlmain .= " AND (patient.pname LIKE '%$search%')";
 }
 
 // Check if filter is applied
@@ -89,10 +91,10 @@ $sqlmain .= " ORDER BY appointment.appodate $sort_order, appointment.appointment
 $sql_pagination = $sqlmain . " LIMIT $start_from, $results_per_page";
 $result = $database->query($sql_pagination);
 
-// Count total records for pagination
-$count_result = $database->query(str_replace("appointment.appoid, procedures.procedure_name, patient.pname, patient.pid, appointment.appodate, appointment.appointment_time, patient.profile_pic", 
-                                          "COUNT(*) as total", $sqlmain));
-$count_row = $count_result->fetch_assoc();
+$count_sql = preg_replace('/^SELECT[\s\S]*?FROM\s+appointment/i', 'SELECT COUNT(*) as total FROM appointment', $sqlmain);
+$count_sql = preg_replace('/ORDER BY[\s\S]*/i', '', $count_sql); // remove ORDER BY for count
+$count_result = $database->query($count_sql);
+$count_row = $count_result ? $count_result->fetch_assoc() : null;
 $total_records = $count_row['total'] ?? 0;
 $total_pages = ceil($total_records / $results_per_page);
 $booking_count = $total_records;
@@ -102,12 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     $id = $_GET["id"];
     $action = $_GET["action"];
 
-    // First get appointment details
+    // First get appointment details (no procedure name for dentist view)
     $bookingQuery = $database->query("
-        SELECT a.*, p.pid, p.pname, p.pemail, pr.procedure_name
+        SELECT a.*, p.pid, p.pname, p.pemail
         FROM appointment a
         JOIN patient p ON a.pid = p.pid
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
         WHERE a.appoid = '$id' AND a.docid = '$userid'
     ");
    
@@ -127,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     $appodate,
                     $booking['appointment_time'] ?? '',
                     $username,
-                    $booking['procedure_name'] ?? ''
+                    ''
                 );
                 if (!($emailResult['ok'] ?? false)) {
                     error_log('Dentist accept: failed to send confirmation email for appoid=' . $id . ' error=' . ($emailResult['error'] ?? ''));
@@ -138,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 
             // Create notification for patient
             $notificationTitle = "Booking Accepted";
-            $notificationMessage = "Your booking for " . $booking['procedure_name'] . " on " .
+            $notificationMessage = "Your booking on " .
                                  date('M j, Y', strtotime($booking['appodate'])) . " at " .
                                  date('g:i A', strtotime($booking['appointment_time'])) .
                                  " has been accepted by Dr. " . $username;
@@ -155,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             );
             $notificationQuery->execute();
            
-            header("Location: booking.php");
+            redirect_with_context('booking.php');
             exit();
            
         } elseif ($action == 'reject') {
@@ -186,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     $appodate,
                     $booking['appointment_time'] ?? '',
                     $username,
-                    $booking['procedure_name'] ?? '',
+                    '',
                     'dentist'
                 );
                 if (!($emailResult['ok'] ?? false)) {
@@ -201,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
        
             // Create notification for patient
             $notificationTitle = "Booking Rejected";
-            $notificationMessage = "Your booking for " . $booking['procedure_name'] . " on " .
+            $notificationMessage = "Your booking on " .
                                  date('M j, Y', strtotime($booking['appodate'])) . " at " .
                                  date('g:i A', strtotime($booking['appointment_time'])) .
                                  " has been rejected by Dr. " . $username;
@@ -218,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             );
             $notificationQuery->execute();
        
-            header("Location: booking.php");
+            redirect_with_context('booking.php');
             exit();
         }
     }
@@ -235,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Bookings - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -357,10 +359,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -387,7 +391,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     <span class="nav-label">Calendar</span>
                 </a>
                 <a href="booking.php" class="nav-item active">
-                                        <th>Branch</th>
                     <img src="../Media/Icon/Blue/booking.png" alt="Booking" class="nav-icon">
                     <span class="nav-label">Booking</span>
                 </a>
@@ -401,9 +404,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                 </a>
                 <a href="dentist-records.php" class="nav-item">
                     <img src="../Media/Icon/Blue/edit.png" alt="Records" class="nav-icon">
-                                            <td>
-                                                <div class="cell-text"><?php echo htmlspecialchars($doctorBranchName ?: '-'); ?></div>
-                                            </td>
                     <span class="nav-label">Records</span>
                 </a>
                 <a href="settings.php" class="nav-item">
@@ -429,7 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     <div class="search-container">
                         <form action="" method="GET" style="display: flex; width: 100%;">
                             <input type="search" name="search" id="searchInput" class="search-input"
-                                placeholder="Search by patient name or procedure"
+                                placeholder="Search by patient name"
                                 value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
                             <?php if (isset($_GET['search']) && $_GET['search'] != ""): ?>
                                 <button type="button" class="clear-btn" onclick="clearSearch()">×</button>
@@ -482,8 +482,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                                     <tr>
                                         <th>Profile</th>
                                         <th>Patient Name</th>
-                                        <th>Procedure</th>
-                                        <th>Date & Time</th>
+                                            <th>Branch</th>
+                                            <th>Date & Time</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -492,11 +492,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                                         <tr>
                                             <td>
                                                 <?php
-                                                // Check if profile picture exists
-                                                if (!empty($row['profile_pic'])) {
-                                                    $photo = "../" . $row['profile_pic'];
-                                                } else {
+                                                // Normalize profile picture path and fallback to default avatar
+                                                $profilePicRaw = isset($row['profile_pic']) ? trim($row['profile_pic']) : '';
+                                                if ($profilePicRaw === '' || $profilePicRaw === 'default.jpg' || $profilePicRaw === 'default.png') {
                                                     $photo = "../Media/Icon/Blue/profile.png";
+                                                } else {
+                                                    $cleanPath = ltrim($profilePicRaw, '/');
+                                                    $photo = "../" . $cleanPath;
                                                 }
                                                 ?>
                                                 <img src="<?php echo $photo; ?>" alt="<?php echo $row['pname']; ?>"
@@ -507,7 +509,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                                                 <div class="cell-subtext">ID: P-<?php echo $row['pid']; ?></div>
                                             </td>
                                             <td>
-                                                <div class="cell-text"><?php echo $row['procedure_name']; ?></div>
+                                                <div class="cell-text"><?php echo isset($row['branch_name']) ? htmlspecialchars($row['branch_name']) : '-'; ?></div>
                                             </td>
                                             <td>
                                                 <div class="cell-text"><?php echo date('M j, Y', strtotime($row['appodate'])); ?></div>
@@ -674,34 +676,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                             <?php
                             $upcomingAppointments = $database->query("
                                 SELECT
-                                    appointment.appoid,
-                                    patient.pname AS patient_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time,
-                                    procedures.procedure_name
-                                FROM appointment
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                    a.appoid,
+                                    p.pname AS patient_name,
+                                    b.name AS branch_name,
+                                    a.appodate,
+                                    a.appointment_time,
+                                    COALESCE(
+                                        CONCAT_WS(', ',
+                                            NULLIF(pr.procedure_name, ''),
+                                            NULLIF(GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '), '')
+                                        ),
+                                        pr.procedure_name
+                                    ) AS procedures
+                                FROM appointment a
+                                INNER JOIN patient p ON a.pid = p.pid
+                                LEFT JOIN branches b ON b.id = a.branch_id
+                                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
                                 WHERE
-                                    appointment.docid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
+                                    a.docid = '$userid'
+                                    AND a.status IN ('appointment', 'booking')
+                                    AND a.appodate >= '$today'
+                                GROUP BY a.appoid, p.pname, b.name, a.appodate, a.appointment_time, pr.procedure_name
+                                ORDER BY a.appodate ASC, a.appointment_time ASC
                                 LIMIT 3;
                             ");
 
 
                             if ($upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedures'] ?? '');
+                                    $patient = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $dateLine = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    $suffix = $branch ? (' - ' . $branch) : '';
+                                    echo '<div class="appointment-item">'
+                                        . '<h4 class="appointment-type">' . ($proc !== '' ? $proc : 'Appointment') . '</h4>'
+                                        . '<p class="appointment-date">With ' . $patient . '</p>'
+                                        . '<p class="appointment-date">' . $dateLine . $suffix . '</p>'
+                                    . '</div>';
                                 }
                             } else {
                                 echo '<div class="no-appointments">
@@ -774,6 +788,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             currentAction = null;
         }
         
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
     
 </body>

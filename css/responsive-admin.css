@@ -1,0 +1,381 @@
+/* Mobile admin hamburger toggle button */
+@media (max-width: 991px) {
+  .hamburger-admin {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    width: 46px;
+    height: 46px;
+    background: #1d72b8;
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+    cursor: pointer;
+  }
+
+  /* If the button uses the inner bars structure */
+  .hamburger-admin .hamburger-box { width: 24px; height: 18px; display: inline-block; }
+  .hamburger-admin .hamburger-inner { position: relative; }
+  .hamburger-admin .hamburger-inner::before,
+  .hamburger-admin .hamburger-inner::after,
+  .hamburger-admin .hamburger-inner span {
+    content: "";
+    display: block;
+    height: 2px;
+    background-color: #FFFFFF;
+    border-radius: 2px;
+    margin: 4px 0;
+  }
+
+  /* Overlay below the button but above content; do not block clicks when hidden */
+  .sidebar-overlay { z-index: 1000; position: fixed; inset: 0; background: rgba(0,0,0,0.3); opacity: 0; pointer-events: none; }
+  .sidebar-overlay.visible { opacity: 1; pointer-events: auto; }
+}
+/* Responsive admin overrides */
+
+/* Mobile: off-canvas sidebar with toggle */
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left:0; top:0; height:100vh; width:260px; transform:translateX(-100%); transition:transform .3s ease; z-index:1000; box-shadow:2px 0 8px rgba(0,0,0,.25); overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .sidebar.open { transform:translateX(0); }
+  .content-area { margin-left:0 !important; }
+  .main-container { flex-direction: column; }
+  .right-sidebar { position: static; top:auto; height:auto; box-shadow:none; width:100% !important; max-width:none !important; flex:1 1 auto; }
+  /* Generic mobile: make content full width and reduce gutters */
+  .content-area { width: 100% !important; max-width: none !important; }
+  .content { width: 100% !important; max-width: none !important; padding-left: 12px; padding-right: 12px; gap: 12px; }
+  .main-section { width: 100% !important; margin-right: 0 !important; }
+  /* Force single column stats on small screens */
+  .stats-section .stats-container { display: grid; grid-template-columns: 1fr !important; gap: 10px; }
+  .stat-box, .stat-box-link .stat-box { width: 100% !important; }
+  .stats-container .stat-box { min-height:100px; }
+  .calendar-section, .upcoming-appointments { margin-top:20px; }
+  .announcement-post-button { flex-direction: column; align-items: flex-start; }
+
+  /* Patient Calendar mobile: maximize calendar viewport */
+  body.patient-calendar .content-area { padding-left: 0; padding-right: 0; }
+  body.patient-calendar .content { padding-left: 8px; padding-right: 8px; }
+  body.patient-calendar .main-section .container { padding-left: 0; padding-right: 0; max-width: none; }
+  body.patient-calendar .main-section .row, body.patient-calendar .main-section .col-lg-12 { margin-left: 0; margin-right: 0; padding-left: 8px; padding-right: 8px; }
+  body.patient-calendar #calendar { width: 100% !important; height: auto !important; }
+  body.patient-calendar .fc-scroller { overflow: visible !important; }
+  body.patient-calendar .fc-view, body.patient-calendar .fc-view-container { height: auto !important; }
+  /* FullCalendar tweaks */
+  body.patient-calendar .fc .fc-toolbar { padding: 4px 6px; }
+  body.patient-calendar .fc .fc-toolbar-title { font-size: 18px; }
+  body.patient-calendar .fc .fc-button { padding: 6px 8px; font-size: 12px; }
+  body.patient-calendar .fc-daygrid-day-number { font-size: 12px; padding: 4px; }
+  body.patient-calendar .fc-daygrid-event { white-space: normal; font-size: 11px; line-height: 1.25; padding: 2px 4px; }
+  body.patient-calendar .fc-scrollgrid { border-radius: 8px; }
+  /* Increase day cell height for better tap targets */
+  body.patient-calendar .fc-daygrid-day-frame { min-height: 68px; }
+
+  /* Sidebar labels behavior: hidden when closed, shown when open */
+  .nav-label { display: none; }
+  .sidebar.open .nav-label { display: inline; margin-left: 12px; white-space: nowrap; }
+  .sidebar.open .nav-item { justify-content: flex-start; padding-left: 16px; }
+
+  /* Ensure logout is reachable at the bottom */
+  .sidebar { padding-bottom: 80px; }
+  .log-out { margin-top: 16px; padding-bottom: 16px; }
+}
+
+/* Patient My Booking: stack time below date on mobile */
+@media (max-width: 768px) {
+  /* Allow table text to wrap */
+  .content .table th,
+  .content .table td { white-space: normal; }
+  /* Ensure Date & Time column stacks nicely (5th column) */
+  .content .table td:nth-child(5) .cell-text { display: block; line-height: 1.25; }
+  .content .table td:nth-child(5) .cell-text + .cell-text { margin-top: 4px; color: #666; font-size: 0.95em; }
+  /* Avoid overlap by giving actions breathing room */
+  .content .table td:nth-child(6) { min-width: 140px; }
+}
+
+/* Admin Calendar mobile: maximize calendar viewport */
+@media (max-width: 768px) {
+  body.admin-calendar .content-area { padding-left: 0; padding-right: 0; }
+  body.admin-calendar .content { padding-left: 8px; padding-right: 8px; }
+  body.admin-calendar .main-section .container { padding-left: 0; padding-right: 0; max-width: none; }
+  body.admin-calendar .main-section .row, body.admin-calendar .main-section .col-lg-12 { margin-left: 0; margin-right: 0; padding-left: 8px; padding-right: 8px; }
+  body.admin-calendar #calendar { width: 100% !important; height: auto !important; }
+  body.admin-calendar .fc-scroller { overflow: visible !important; }
+  /* Stretch right sidebar to full width on mobile */
+  body.admin-calendar .right-sidebar { width: 100% !important; max-width: none !important; margin-top: 12px; }
+  body.admin-calendar #right-sidebar-container { width: 100% !important; max-width: none !important; }
+  body.admin-calendar #right-sidebar-container .stats-container { grid-template-columns: 1fr !important; }
+  body.admin-calendar #right-sidebar-container .stat-box, 
+  body.admin-calendar #right-sidebar-container .stat-box-link .stat-box { width: 100% !important; }
+  body.admin-calendar #right-sidebar-container .color-guide-container, 
+  body.admin-calendar #right-sidebar-container .upcoming-appointments { width: 100% !important; }
+  /* Make filters/selects stretch nicely */
+  body.admin-calendar .form-group { flex-direction: column; gap: 10px; }
+  body.admin-calendar .form-group > div { width: 100%; }
+  body.admin-calendar .select-wrapper select, 
+  body.admin-calendar .select2-container { width: 100% !important; }
+}
+
+/* Admin Dashboard mobile refinements */
+@media (max-width: 768px) {
+  body.admin-dashboard .nav-container { padding-top: 56px; }
+  body.admin-dashboard .content-area { width: 100% !important; max-width: none !important; padding-left: 8px; padding-right: 8px; }
+  body.admin-dashboard .content { width: 100% !important; max-width: none !important; padding-left: 8px; padding-right: 8px; gap: 12px; }
+  body.admin-dashboard .main-section { width: 100% !important; margin-right: 0 !important; }
+  body.admin-dashboard .right-sidebar { width: 100% !important; max-width: none !important; margin-top: 12px; }
+  body.admin-dashboard .stats-section .stats-container { display: grid; grid-template-columns: 1fr !important; gap: 10px; }
+  body.admin-dashboard .stat-box, body.admin-dashboard .stat-box-link .stat-box { width: 100% !important; }
+  body.admin-dashboard .search-container { padding: 8px 12px; }
+  body.admin-dashboard .search-container form { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+  body.admin-dashboard .search-input { flex: 1 1 auto; width: auto; }
+  body.admin-dashboard .clear-btn { position: relative; top: auto; right: auto; margin-left: 8px; }
+}
+
+/* Fallback rules when body classes are missing on admin pages */
+@media (max-width: 768px) {
+  /* Common layout containers */
+  .admin .content-area, .admin .content, .admin .main-section { width: 100% !important; max-width: none !important; }
+  .admin .content-area { padding-left: 8px; padding-right: 8px; }
+  .admin .content { padding-left: 8px; padding-right: 8px; }
+  .admin .right-sidebar, #right-sidebar-container { width: 100% !important; max-width: none !important; }
+  /* Stats to single column */
+  .admin .stats-container { display: grid; grid-template-columns: 1fr !important; gap: 10px; }
+  .admin .stat-box, .admin .stat-box-link .stat-box { width: 100% !important; }
+  /* Calendar area */
+  .admin #calendar { width: 100% !important; height: auto !important; }
+  .admin .fc-scroller { overflow: visible !important; }
+  /* Filters/selects */
+  .admin .form-group { display: flex; flex-direction: column; gap: 10px; }
+  .admin .form-group > div { width: 100%; }
+  .admin .select-wrapper select, .admin .select2-container { width: 100% !important; }
+  /* Add some top padding to avoid hamburger overlap */
+  .admin .nav-container { padding-top: 56px; }
+}
+
+/* Patient Calendar mobile: maximize calendar and stretch filters */
+@media (max-width: 768px) {
+  /* Global mobile: make sidebar text black across pages */
+  .sidebar .nav-item .nav-label,
+  .sidebar a,
+  .log-out .nav-item .nav-label { color: #000 !important; }
+  /* When selected/active, use themed blue */
+  .sidebar .nav-item.active,
+  .sidebar .nav-item.active .nav-label,
+  .sidebar .nav-item.active span.nav-label,
+  .sidebar .nav-item.active a.nav-item,
+  .sidebar .nav-item.active a.nav-item .nav-label,
+  body.patient-calendar .sidebar .nav-item.active,
+  body.patient-calendar .sidebar .nav-item.active .nav-label,
+  body.patient-calendar .sidebar .nav-item.active span.nav-label,
+  body.patient-calendar .sidebar .nav-item.active a.nav-item,
+  body.patient-calendar .sidebar .nav-item.active a.nav-item .nav-label { color: #6491bb !important; }
+  /* Force inherited color for all children except images to ensure label turns blue */
+  .sidebar .nav-item.active *:not(img) { color: #6491bb !important; }
+  /* Optional: ensure SVG icons inside active nav inherit themed color if applicable */
+  .sidebar .nav-item.active img { filter: none; }
+
+  body.patient-calendar .content-area { padding-left: 0; padding-right: 0; }
+  body.patient-calendar .content-area { margin-left: 0 !important; }
+  body.patient-calendar .nav-container { display: block; }
+  body.patient-calendar .content { padding-left: 8px; padding-right: 8px; }
+  body.patient-calendar .main-section .container { padding-left: 0; padding-right: 0; max-width: none; }
+  body.patient-calendar .main-section .row, body.patient-calendar .main-section .col-lg-12 { margin-left: 0; margin-right: 0; padding-left: 8px; padding-right: 8px; }
+  body.patient-calendar #calendar { width: 100% !important; height: auto !important; }
+  body.patient-calendar .fc-scroller { overflow: visible !important; }
+  body.patient-calendar .right-sidebar { width: 100% !important; max-width: none !important; margin-top: 12px; }
+  body.patient-calendar #right-sidebar-container { width: 100% !important; max-width: none !important; }
+  body.patient-calendar #right-sidebar-container .stats-container { grid-template-columns: 1fr !important; }
+  body.patient-calendar #right-sidebar-container .stat-box, 
+  body.patient-calendar #right-sidebar-container .stat-box-link .stat-box { width: 100% !important; }
+  body.patient-calendar .form-group { display: flex; flex-direction: column; gap: 10px; }
+  body.patient-calendar .form-group > div { width: 100%; }
+  body.patient-calendar .select-wrapper select, 
+  body.patient-calendar .select2-container { width: 100% !important; }
+  /* Collapse the left icon sidebar to off-canvas on mobile */
+  body.patient-calendar .sidebar, 
+  body.patient-calendar .left-sidebar, 
+  body.patient-calendar .nav-side { position: fixed; left: -260px; top: 0; height: 100vh; width: 240px; z-index: 999; }
+  body.patient-calendar .sidebar.open { left: 0; }
+  /* Ensure main content uses full width */
+  body.patient-calendar .main-section, 
+  body.patient-calendar .main-content, 
+  body.patient-calendar .content-wrapper { margin-left: 0 !important; padding-left: 8px; padding-right: 8px; width: 100% !important; max-width: none !important; }
+  /* Prevent overlapping under the fixed hamburger */
+  body.patient-calendar .nav-container { padding-top: 56px; }
+  /* Ensure sidebar text is black for readability on mobile */
+  body.patient-calendar .sidebar .nav-item .nav-label,
+  body.patient-calendar .sidebar .nav-item,
+  body.patient-calendar .sidebar a,
+  body.patient-calendar .log-out .nav-item .nav-label { color: #000 !important; }
+  body.patient-calendar .sidebar .nav-item.active .nav-label { color: #000 !important; }
+}
+
+/* Fallback rules when body class is missing on patient calendar */
+@media (max-width: 768px) {
+  .patient .content-area, .patient .content { padding-left: 8px; padding-right: 8px; }
+  .patient .content-area { margin-left: 0 !important; }
+  .patient .main-section .container { padding-left: 0; padding-right: 0; max-width: none; }
+  .patient #calendar { width: 100% !important; height: auto !important; }
+  .patient .fc-scroller { overflow: visible !important; }
+  .patient .right-sidebar, .patient #right-sidebar-container { width: 100% !important; max-width: none !important; }
+  .patient .stats-container { display: grid; grid-template-columns: 1fr !important; gap: 10px; }
+  .patient .stat-box, .patient .stat-box-link .stat-box { width: 100% !important; }
+  .patient .form-group { display: flex; flex-direction: column; gap: 10px; }
+  .patient .form-group > div { width: 100%; }
+  .patient .select-wrapper select, .patient .select2-container { width: 100% !important; }
+  /* Collapse generic patient left sidebar */
+  .patient .sidebar, .patient .left-sidebar, .patient .nav-side { position: fixed; left: -260px; top: 0; height: 100vh; width: 240px; z-index: 999; }
+  .patient .sidebar.open { left: 0; }
+  .patient .main-section, .patient .main-content, .patient .content-wrapper { margin-left: 0 !important; width: 100% !important; max-width: none !important; }
+  /* Sidebar text to black for mobile */
+  .patient .sidebar .nav-item .nav-label,
+  .patient .sidebar .nav-item,
+  .patient .sidebar a,
+  .patient .log-out .nav-item .nav-label { color: #000 !important; }
+  .patient .sidebar .nav-item.active .nav-label { color: #000 !important; }
+}
+
+/* Dentist Calendar mobile: maximize calendar viewport */
+@media (max-width: 768px) {
+  body.dentist-calendar .content-area { padding-left: 0; padding-right: 0; }
+  body.dentist-calendar .content { padding-left: 8px; padding-right: 8px; }
+  body.dentist-calendar .main-section .container { padding-left: 0; padding-right: 0; max-width: none; }
+  body.dentist-calendar .main-section .row, body.dentist-calendar .main-section .col-lg-12 { margin-left: 0; margin-right: 0; padding-left: 8px; padding-right: 8px; }
+  body.dentist-calendar #calendar { width: 100% !important; height: auto !important; }
+  body.dentist-calendar .fc-scroller { overflow: visible !important; }
+}
+
+@media (max-width: 540px){
+  .stats-container { grid-template-columns:1fr; }
+  .announcement-post-button { gap:10px; }
+}
+
+/* Tables: only allow horizontal scroll below 992px */
+.table-responsive { width:100%; }
+.table-responsive table { width:100%; border-collapse:collapse; }
+@media (max-width: 992px) {
+  .table-responsive { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-responsive table { min-width:700px; }
+  /* Dentist page mobile friendliness */
+  /* Trim extra margins on cards to reclaim space */
+  body.patient-dashboard .stat-box, body.patient-dashboard .announcement-item, body.patient-dashboard .calendar-container { margin-right: 0; }
+  .main-container { padding-top: 52px; }
+  .search-container { padding: 8px 12px; }
+  .search-container form, .search-container > div { flex-direction: row; align-items: center; gap: 8px; }
+  .search-input { flex: 1 1 auto; width: auto; }
+  .clear-btn { position: relative; top: auto; right: auto; margin-left: 8px; }
+
+  .announcements-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .announcements-title { margin-bottom: 6px; }
+  .announcement-filters { flex-wrap: wrap; gap: 8px; }
+  .filter-btn { min-height: 36px; }
+  .filter-branch-select { max-width: 100%; }
+
+  .table-container { overflow-x: auto; }
+  .table thead th, .table td { white-space: nowrap; }
+  .profile-img-small { width: 36px; height: 36px; }
+
+  .stats-container { grid-template-columns: 1fr; }
+  .right-sidebar { width: 100%; max-width: none; }
+  .calendar-container { margin-top: 14px; }
+
+  /* Admin Calendar mobile friendliness */
+  .nav-container { padding-top: 56px; }
+  .form-group { flex-direction: column; gap: 10px; }
+  .form-group > div { width: 100%; }
+  .select-wrapper select, .select2-container { width: 100% !important; }
+  #calendar { min-height: 420px; margin-top: 10px; }
+  #right-sidebar-container .right-sidebar { width: 100%; max-width: none; margin-top: 16px; }
+  #right-sidebar-container .stats-container { grid-template-columns: 1fr; gap: 10px; }
+  .color-guide-container { margin-top: 12px; }
+
+  /* Financial Reports mobile friendliness */
+  .content-area .reports-filter-form { flex-direction: column; align-items: stretch; }
+  .reports-filter-form .filter-group { width: 100%; }
+  .reports-filter-form .filter-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+  .reports-stats { grid-template-columns: 1fr; }
+  .reports-section-grid { grid-template-columns: 1fr; }
+  .report-card { padding: 16px; }
+  .chart-container { width: 100%; }
+  .main-container { padding-top: 56px; }
+  /* Prevent tile overflow and add breathing room */
+  .reports-stats .stat-box { padding: 16px; }
+  .reports-stats .stat-content h2 { font-size: 24px; }
+  /* Tables: enable horizontal scroll and avoid clipping */
+  .report-card .card-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .report-card table { min-width: 540px; }
+  .report-card table thead th { white-space: nowrap; }
+  .report-card table td { white-space: nowrap; }
+  /* Controls and pills wrap nicely */
+  .section-title { flex-wrap: wrap; gap: 10px; }
+  .pill { margin-top: 6px; }
+  .collapse-btn { margin-top: 6px; }
+}
+@media (max-width: 768px) {
+  .table-responsive table { min-width:650px; }
+}
+@media (max-width: 576px) {
+  .table-responsive table { min-width:600px; }
+}
+
+/* Utility classes */
+.hide-mobile { display:block; }
+.show-mobile { display:none; }
+@media (max-width:768px){ .hide-mobile { display:none !important; } .show-mobile { display:inline-flex !important; } }
+
+/* Hamburger button (mobile only) */
+.hamburger-admin { position:fixed; top:10px; left:10px; width:46px; height:46px; background:#1d72b8; border:none; border-radius:10px; color:#fff; font-size:26px; display:none; align-items:center; justify-content:center; z-index:1100; box-shadow:0 2px 6px rgba(0,0,0,.2); }
+@media (max-width:768px){ .hamburger-admin { display:flex; } }
+/* Overlay behind the sidebar when open */
+.sidebar-overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:900; display:none; }
+.sidebar-overlay.visible { display:block; }
+
+/* Desktop: keep fixed sidebar behavior */
+@media (min-width:769px){
+  .sidebar.collapsed { width:330px; }
+  .content-area.collapsed { margin-left:330px !important; width:calc(100% - 330px); }
+}
+
+/* Responsive announcements scroll */
+@media (max-width:768px){
+  .announcements { max-height:none; }
+}
+
+/* Patient Dashboard mobile refinements */
+@media (max-width: 768px) {
+  body.patient-dashboard .content-area,
+  body.patient-dashboard .main-container .content-area { padding-top: 0; }
+  body.patient-dashboard .search-container { margin-top: 8px; }
+  body.patient-dashboard .announcements-header { margin-top: 10px; }
+  /* Reduce side gutters: make main content full-width */
+  body.patient-dashboard .main-container { padding-left: 12px; padding-right: 12px; }
+  body.patient-dashboard .content-area { width: 100% !important; max-width: none !important; }
+  body.patient-dashboard .content { width: 100% !important; max-width: none !important; padding-left: 12px; padding-right: 12px; gap: 12px; }
+  body.patient-dashboard .main-section { width: 100% !important; margin-right: 0; }
+  /* Trim extra margins on cards to reclaim space */
+  body.patient-dashboard .stat-box,
+  body.patient-dashboard .announcement-item,
+  body.patient-dashboard .calendar-container { margin-right: 0; margin-left: 0; }
+}
+
+/* Patient Dashboard mobile refinements */
+@media (max-width: 768px) {
+  body.patient-dashboard .content-area,
+  body.patient-dashboard .main-container .content-area { padding-top: 0; }
+  /* Add minimal spacing under hamburger only for the search bar */
+  body.patient-dashboard .search-container { margin-top: 12px; }
+  /* Tidy spacing under the hamburger for the search bar */
+  body.patient-dashboard .search-container { margin-top: 8px; }
+  body.patient-dashboard .announcements-header { margin-top: 10px; }
+  body.patient-dashboard .right-sidebar { width: 100% !important; max-width: none !important; margin-top: 12px; }
+  body.patient-dashboard .stats-section .stats-container { display: grid; grid-template-columns: 1fr !important; gap: 10px; }
+  body.patient-dashboard .stat-box,
+  body.patient-dashboard .stat-box-link .stat-box { width: 100% !important; }
+  body.patient-dashboard .calendar-section .calendar-container { width: 100%; }
+  /* Ensure sidebar scroll with visible logout */
+  body.patient-dashboard .sidebar { height: 100vh; overflow-y: auto; padding-bottom: 80px; }
+}

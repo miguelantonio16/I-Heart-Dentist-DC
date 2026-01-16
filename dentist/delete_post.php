@@ -55,5 +55,6 @@ if (!$stmt->execute()) {
     exit();
 }
 
-header("Location: dashboard.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
+redirect_with_context('dashboard.php');
 ?>

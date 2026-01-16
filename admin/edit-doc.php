@@ -31,14 +31,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // Check if passwords match and are not empty
     if (!empty($password) && $password != $cpassword) {
-        header("location: dentist.php?action=edit&id=$id&error=2");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'edit', 'id' => $id, 'error' => 2]);
         exit;
     }
 
     // Check if email is already used by another doctor
     $result = $database->query("SELECT docid FROM doctor WHERE docemail = '$email' AND docid != '$id'");
     if ($result->num_rows > 0) {
-        header("location: dentist.php?action=edit&id=$id&error=1");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'edit', 'id' => $id, 'error' => 1]);
         exit;
     }
 
@@ -59,7 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Validate file extension
         if (!in_array($photo_ext, $allowed_extensions)) {
-            header("location: dentist.php?action=edit&id=$id&error=5"); // Invalid file type
+            require_once __DIR__ . '/../inc/redirect_helper.php';
+            redirect_with_context('dentist.php', ['action' => 'edit', 'id' => $id, 'error' => 5]); // Invalid file type
             exit;
         }
         
@@ -117,11 +120,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
         $database->commit();
-        header("location: dentist.php?action=edit&id=$id&error=4");
+            require_once __DIR__ . '/../inc/redirect_helper.php';
+            redirect_with_context('dentist.php', ['action' => 'edit', 'id' => $id, 'error' => 4]);
     } catch (Exception $e) {
         $database->rollback();
         error_log("Database error: " . $e->getMessage());
-        header("location: dentist.php?action=edit&id=$id&error=3");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dentist.php', ['action' => 'edit', 'id' => $id, 'error' => 3]);
     }
 }
 ?>

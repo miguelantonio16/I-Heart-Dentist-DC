@@ -1,3 +1,44 @@
+<?php /*
+                    <div class="upcoming-appointments">
+                        <h3>Upcoming Appointments</h3>
+                        <div class="appointments-content">
+                            <?php
+                            $upcomingAppointments = $database->query("
+                                SELECT
+                                    appointment.appoid,
+                                    procedures.procedure_name,
+                                    appointment.appodate,
+                                    appointment.appointment_time
+                                FROM appointment
+                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                WHERE
+                                    appointment.pid = '$userid'
+                                    AND appointment.status = 'appointment'
+                                    AND appointment.appodate >= '$today'
+                                ORDER BY appointment.appodate ASC
+                                LIMIT 3;
+                            ");
+                            if ($upcomingAppointments->num_rows > 0) {
+                                while ($appointment = $upcomingAppointments->fetch_assoc()) {
+                                    echo '<div class="appointment-item">
+                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
+                                        <p class="appointment-date">' .
+                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
+                                            ' • ' .
+                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
+                                        '</p>
+                                    </div>';
+                                }
+                            } else {
+                                echo '<div class="no-appointments">
+                                    <p>No upcoming appointments scheduled</p>
+                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>
+                                </div>';
+                            }
+                            ?>
+                        </div>
+                    </div>
+*/ ?>
 <?php
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING);  // Report all errors except notices and warnings
 ini_set('display_errors', 0);  // Disable displaying errors
@@ -19,6 +60,7 @@ if (isset($_SESSION["user"])) {
 
 // Import database connection
 include("../connection.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
 
 // Handle password change
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["change_password"])) {
@@ -39,7 +81,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["change_password"])) {
             $database->query($update_sql);
             
             $_SESSION["password_change_success"] = "Password changed successfully!";
-            header("Location: settings.php");
+            redirect_with_context('settings.php');
             exit();
         } else {
             $_SESSION["password_change_error"] = "New passwords do not match!";
@@ -72,7 +114,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["update_profile"])) {
     }
     
     $_SESSION["profile_update_success"] = "Profile updated successfully!";
-    header("Location: settings.php");
+    redirect_with_context('settings.php');
     exit();
 }
 
@@ -93,6 +135,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["update_profile"])) {
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/settings.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/overrides.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Settings - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -300,6 +344,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["update_profile"])) {
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <?php
     date_default_timezone_set('Asia/Singapore');
 
@@ -408,7 +454,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["update_profile"])) {
     }
     ?>
     <div class="nav-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -679,38 +725,54 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["update_profile"])) {
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                WHERE
-                                    appointment.pid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
-                            ");
+                            $sql = "SELECT
+                                        a.appoid,
+                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                        a.appodate,
+                                        a.appointment_time,
+                                        d.docname as doctor_name,
+                                        b.name AS branch_name
+                                    FROM appointment a
+                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                    LEFT JOIN branches b ON d.branch_id = b.id
+                                    WHERE
+                                        a.pid = '$userid'
+                                        AND a.status = 'appointment'
+                                        AND a.appodate >= '$today'
+                                    GROUP BY a.appoid
+                                    ORDER BY a.appodate ASC, a.appointment_time ASC
+                                    LIMIT 3";
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            $upcomingAppointments = $database->query($sql);
+
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                    echo '<div class="appointment-item">';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') {
+                                        $datetime .= ' - ' . $branch;
+                                    }
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
+                                    echo '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>
-                                </div>';
+                                echo '<div class="no-appointments">                                    <p>No upcoming appointments scheduled</p>                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>                                </div>';
                             }
                             ?>
                         </div>
@@ -997,6 +1059,34 @@ function markAllAsRead() {
                 });
             });
         });
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
 </body>
 

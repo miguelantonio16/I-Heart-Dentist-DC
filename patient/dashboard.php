@@ -13,9 +13,9 @@
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/loading.css">
     <link rel="stylesheet" href="../css/dashboard.css">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Architects+Daughter&family=Archivo+Black&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Mulish:ital,wght@0,200..1000;1,200..1000&family=Oswald:wght@200..700&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
-        rel="stylesheet">
+    <link rel="stylesheet" href="../css/responsive.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
+    <link rel="stylesheet" href="../css/overrides.css">
     <title>Dashboard - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <script>
@@ -97,10 +97,12 @@ $currentDay = date('j');
 $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC';
 ?>
 
-<body>
+<body class="patient-dashboard">
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
         <!-- sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -111,7 +113,7 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                     include_once __DIR__ . '/../inc/get_profile_pic.php';
                     $profile_pic = get_profile_pic($userfetch);
                     ?>
-                    <img src="../<?php echo $profile_pic; ?>" alt="Profile" class="profile-img">
+                    <img src="../<?php echo $profile_pic; ?>" alt="Profile" class="profile-img" onerror="this.onerror=null;this.src='../Media/Icon/Blue/profile.png';">
                 </div>
                 <h3 class="profile-name"><?php echo substr($username, 0, 25) ?></h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
@@ -227,13 +229,61 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                             if (!$pa_pk) $pa_pk = 'id';
 
                             // Normalized query aliases PK to `pk` and dentist photo to `docphoto`
+                            // Determine whether the current patient belongs to a branch so we can show branch-admin posts only to same-branch patients
+                            $patientBranchId = isset($userfetch['branch_id']) ? (int)$userfetch['branch_id'] : 0;
+
+                            // Map of branch-admin emails to branch names
+                            $branchAdminMap = [
+                                'adminbacoor@edoc.com' => 'Bacoor',
+                                'adminmakati@edoc.com' => 'Makati'
+                            ];
+                            $excludeEmails = [];
+                            foreach ($branchAdminMap as $adminEmail => $branchName) {
+                                // find branch id for this branch name
+                                $branchId = null;
+                                $stmtBr = $database->prepare("SELECT id FROM branches WHERE name = ? LIMIT 1");
+                                $stmtBr->bind_param('s', $branchName);
+                                $stmtBr->execute();
+                                $resBr = $stmtBr->get_result();
+                                if ($resBr && $resBr->num_rows === 1) {
+                                    $branchId = (int)$resBr->fetch_assoc()['id'];
+                                } else {
+                                    $like = '%' . $branchName . '%';
+                                    $stmtBr2 = $database->prepare("SELECT id FROM branches WHERE name LIKE ? LIMIT 1");
+                                    $stmtBr2->bind_param('s', $like);
+                                    $stmtBr2->execute();
+                                    $resBr2 = $stmtBr2->get_result();
+                                    if ($resBr2 && $resBr2->num_rows === 1) {
+                                        $branchId = (int)$resBr2->fetch_assoc()['id'];
+                                    }
+                                }
+                                if ($branchId && $patientBranchId !== $branchId) {
+                                    $excludeEmails[] = $database->real_escape_string($adminEmail);
+                                }
+                            }
+
+                            $adminFilter = '';
+                            if (!empty($excludeEmails)) {
+                                $adminFilter = " WHERE aemail NOT IN ('" . implode("','", $excludeEmails) . "')";
+                            }
+
+                            // If patient belongs to a branch, restrict dentist posts to dentists serving the same branch.
+                            $patientBranchIdInt = (int)$patientBranchId;
+                            $dentistWhereClause = '';
+                            if ($patientBranchIdInt > 0) {
+                                // Only include dentist posts where the doctor's primary branch matches the patient branch
+                                // or where the doctor is assigned to the patient branch via doctor_branches.
+                                $dentistWhereClause = "WHERE (doctor.branch_id = " . $patientBranchIdInt . " OR EXISTS (SELECT 1 FROM doctor_branches db WHERE db.docid = post_dentist.docid AND db.branch_id = " . $patientBranchIdInt . "))";
+                            }
+
                             $query = "
-                                SELECT post_dentist.`" . $pd_pk . "` AS pk, post_dentist.docid AS docid, post_dentist.title, post_dentist.content, post_dentist.created_at, doctor.docname, doctor.photo AS docphoto
+                                SELECT post_dentist.`" . $pd_pk . "` AS pk, post_dentist.docid AS docid, post_dentist.title, post_dentist.content, post_dentist.created_at, doctor.docname, doctor.photo AS docphoto, NULL AS aemail
                                 FROM post_dentist
                                 LEFT JOIN doctor ON post_dentist.docid = doctor.docid
+                                " . $dentistWhereClause . "
                                 UNION ALL
-                                SELECT post_admin.`" . $pa_pk . "` AS pk, NULL AS docid, post_admin.title, post_admin.content, post_admin.created_at, 'Admin' AS docname, 'SDMC Logo.png' AS docphoto
-                                FROM post_admin
+                                SELECT post_admin.`" . $pa_pk . "` AS pk, NULL AS docid, post_admin.title, post_admin.content, post_admin.created_at, 'Admin' AS docname, 'SDMC Logo.png' AS docphoto, post_admin.aemail AS aemail
+                                FROM post_admin" . $adminFilter . "
                             ";
 
                             // Add search condition if term exists
@@ -259,17 +309,40 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                                     $isLong = strlen($content) > 400;
                                     $shortContent = $isLong ? substr($content, 0, 255) . '...' : $content;
                                    
-                                    // Determine the photo path
-                                    $photoPath = $post['docname'] === 'Admin'
-                                        ? '../Media/Icon/logo.png'
-                                        : '../admin/uploads/' . $post['docphoto'];
+                                    // Determine the photo path. If the referenced upload does not exist, fall back.
+                                    if ($post['docname'] === 'Admin') {
+                                        $photoPath = '../Media/Icon/logo.png';
+                                    } else {
+                                        $candidate = __DIR__ . '/../admin/uploads/' . $post['docphoto'];
+                                        if (!empty($post['docphoto']) && file_exists($candidate) && is_file($candidate)) {
+                                            $photoPath = '../admin/uploads/' . $post['docphoto'];
+                                        } else {
+                                            // Missing uploaded photo — use a sensible default (profile icon)
+                                            $photoPath = '../Media/Icon/Blue/profile.png';
+                                        }
+                                    }
 
                                     echo '<div class="announcement-item">';
                                     echo '<div class="announcement-header">';
-                                    echo '<div class="clinic-logo"><img src="' . $photoPath . '" alt="Profile" class="announcement-photo"></div>';
+                                    echo '<div class="clinic-logo"><img src="' . $photoPath . '" alt="Profile" class="announcement-photo" onerror="this.onerror=null;this.src=\'../Media/Icon/Blue/profile.png\';"></div>';
                                     echo '<div class="clinic-info">';
                                     echo '<h4 class="clinic-name">' . htmlspecialchars($post['title']) . '</h4>';
-                                    echo '<p class="clinic-date">Posted by: ' . htmlspecialchars($post['docname']) . ' on ' . date('M d, Y', strtotime($post['created_at'])) . '</p>';
+                                    // Determine poster label: dentist name if present, otherwise admin label (special-case adminbacoor)
+                                    if ($post['docname'] === 'Admin') {
+                                        $authorEmail = isset($post['aemail']) ? $post['aemail'] : '';
+                                        $branchAdminLabels = [
+                                            'adminbacoor@edoc.com' => 'Bacoor',
+                                            'adminmakati@edoc.com' => 'Makati'
+                                        ];
+                                        if (isset($branchAdminLabels[$authorEmail])) {
+                                            $posterLabel = 'I Heart Dentist Dental Clinic - ' . $branchAdminLabels[$authorEmail];
+                                        } else {
+                                            $posterLabel = 'I Heart Dentist Dental Clinic';
+                                        }
+                                    } else {
+                                        $posterLabel = $post['docname'];
+                                    }
+                                    echo '<p class="clinic-date">Posted by: ' . htmlspecialchars($posterLabel) . ' on ' . date('M d, Y', strtotime($post['created_at'])) . '</p>';
                                     echo '</div>';
                                     echo '</div>';
                                     echo '<div class="announcement-content">' . nl2br($shortContent) . '</div>';
@@ -416,32 +489,49 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                         <div class="appointments-content">
                             <?php
                             $sql = "SELECT
-                                        appointment.appoid,
-                                        procedures.procedure_name,
-                                        appointment.appodate,
-                                        appointment.appointment_time,
-                                        doctor.docname as doctor_name,
+                                        a.appoid,
+                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                        a.appodate,
+                                        a.appointment_time,
+                                        d.docname as doctor_name,
                                         b.name AS branch_name
-                                    FROM appointment
-                                    INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                    INNER JOIN doctor ON appointment.docid = doctor.docid
-                                    LEFT JOIN branches b ON doctor.branch_id = b.id
+                                    FROM appointment a
+                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                    LEFT JOIN branches b ON d.branch_id = b.id
                                     WHERE
-                                        appointment.pid = '$userid'
-                                        AND appointment.status = 'appointment'
-                                        AND appointment.appodate >= '$today'
-                                    ORDER BY appointment.appodate ASC
+                                        a.pid = '$userid'
+                                        AND a.status = 'appointment'
+                                        AND a.appodate >= '$today'
+                                    GROUP BY a.appoid
+                                    ORDER BY a.appodate ASC, a.appointment_time ASC
                                     LIMIT 3";
 
                             $upcomingAppointments = $database->query($sql);
 
                             if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
                                     echo '<div class="appointment-item">';
-                                    echo '<h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>';
-                                    echo '<p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>';
-                                    echo '<p class="appointment-date">' . htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) . '</p>';
-                                    echo '<p class="appointment-branch">' . htmlspecialchars($appointment['branch_name'] ?? '-') . '</p>';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') {
+                                        $datetime .= ' - ' . $branch;
+                                    }
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
                                     echo '</div>';
                                 }
                             } else {
@@ -582,6 +672,34 @@ function markAllAsRead() {
     });
 }
     </script>
+<script>
+// Mobile sidebar toggle with overlay and accessibility
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('sidebarToggle');
+    var sidebar = document.getElementById('adminSidebar');
+    var overlay = document.getElementById('sidebarOverlay');
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (toggleBtn && sidebar && overlay) {
+        toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+        });
+        overlay.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+    }
+});
+</script>
 </body>
 
 </html>

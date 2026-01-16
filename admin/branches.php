@@ -13,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['branch_name'])) {
     $stmt = $database->prepare("INSERT INTO branches (name, address) VALUES (?, ?)");
     $stmt->bind_param('ss', $name, $address);
     $stmt->execute();
-    header('Location: branches.php');
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('branches.php');
     exit;
 }
 

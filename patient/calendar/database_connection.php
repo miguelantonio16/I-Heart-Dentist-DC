@@ -1,7 +1,7 @@
 <?php
-$hostname = "localhost";
-$username = "root";
-$password = "";  
-$database = "sdmc";   
-$con=mysqli_connect($hostname,$username,$password,$database);    
-?>   
+// Unified database connection: reuse central credentials.
+// This avoids hardcoded local XAMPP values breaking on cPanel.
+require_once __DIR__ . '/../../connection.php';
+// Maintain expected $con variable for legacy code using mysqli_*.
+$con = $database;
+?>

@@ -1,5 +1,11 @@
 <?php
 session_start();
+// Consent form has been removed from the system; redirect users away from this page
+require_once __DIR__ . '/../inc/redirect_helper.php';
+redirect_with_context('dashboard.php');
+exit();
+
+// Legacy code retained below for reference but is no longer reachable
 include("../connection.php"); // Ensure this file contains the database connection logic
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {

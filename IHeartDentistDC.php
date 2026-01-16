@@ -2,6 +2,12 @@
 // Start session
 session_start();
 
+// Enable verbose errors on localhost (defensive in case connection.php not yet loaded or error_reporting suppressed).
+if (in_array($_SERVER['SERVER_NAME'] ?? 'localhost', ['127.0.0.1', 'localhost'], true)) {
+    ini_set('display_errors', 1);
+    ini_set('display_startup_errors', 1);
+    error_reporting(E_ALL);
+}
 
 // Check if any user is logged in and redirect them
 if (isset($_SESSION["user"]) && isset($_SESSION["usertype"])) {
@@ -19,8 +25,30 @@ if (isset($_SESSION["user"]) && isset($_SESSION["usertype"])) {
 }
 require_once 'connection.php';
 
-
-$clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_assoc();
+// Safely load clinic info (avoid fatal on missing table / query failure)
+$clinic_info = [
+    'clinic_name' => 'IHeartDentistDC',
+    'clinic_description' => '',
+    'address' => '',
+    'phone' => '',
+    'email' => '',
+    'facebook_url' => '#',
+    'instagram_url' => '#'
+];
+$clinic_info_rs = $database->query("SELECT * FROM clinic_info WHERE id=1");
+if ($clinic_info_rs && $clinic_info_rs->num_rows === 1) {
+    $row = $clinic_info_rs->fetch_assoc();
+    $clinic_info = array_merge($clinic_info, $row);
+} else {
+    // Fallback: first available row if id=1 missing
+    $fallback_rs = $database->query("SELECT * FROM clinic_info ORDER BY id ASC LIMIT 1");
+    if ($fallback_rs && $fallback_rs->num_rows === 1) {
+        $row = $fallback_rs->fetch_assoc();
+        $clinic_info = array_merge($clinic_info, $row);
+    } else {
+        error_log('Clinic info query failed or empty: ' . $database->error);
+    }
+}
 
 
 
@@ -63,8 +91,7 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
             <ul class="sidebar">
                 <li onclick=hideSidebar()><a href="#"><img src="Media/Icon/Black/navbar.png" class="navbar-logo"
                             alt="Navigation Bar"></a></li>
-                <li><a href="#"><img src="Media/Icon/logo.png" class="logo-name" alt="IHeartDentistDC"></a>
-                </li>
+                <!-- logo removed from sidebar to avoid duplication -->
                 <li><a href="#">Home</a></li>
                 <!--<li><a href="#">About</a></li>-->
                 <li><a href="#services">Services</a></li>
@@ -98,11 +125,10 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
                             <div>
                                 <h1 class="tagline1">SHINE <span class="highlight">BRIGHT</span></h1>
                                 <h1 class="tagline2">TODAY! </h1>
-                                <p class="description">I Heart Dentist Dental Clinic is your trusted partner in achieving a healthy, confident smile. With conveniently located branches in Bacoor and Makati, we provide high-quality dental care in a warm, welcoming environment. Our team of skilled dentists is dedicated to offering personalized treatments using modern techniques and state-of-the-art equipment. Whether you're visiting for a routine checkup, cosmetic procedure, or specialized dental service, we ensure a comfortable and caring experience every step of the way. At I Heart Dentist, your smile is at the heart of what we do.</p>
+                                <p class="description">Love your smile again. Our dedicated team in Bacoor and Makati combines high-tech treatments with a gentle touch to boost your confidence. Whether you need a simple cleaning or a complete smile makeover, we provide the personalized care you need to shine bright.</p>
                             </div>
                             <div class="register-login">
-                                <button class="register"><a href="patient/signup.php">Sign up</a></button>
-                                <button class="login"><a href="patient/login.php">Login</a></button>
+                                <a href="patient/signup.php" class="cta-getstarted">Get started</a>
                             </div>
                         </div>
                     </div>
@@ -161,7 +187,7 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
                     </div>
                 </div>
             </div>
-            <br><br><br><br><br><br><br>
+            <br><br>
         </section>
         <!--
         <section id="about">
@@ -206,7 +232,7 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
 
         <section id="services">
             <div>
-                <br><br><br><br><br><br><br><br><br><br><br><br><br>
+                <br><br>
                 <h2 class="title">SERVICES OFFERED</h2>
             </div>
             <img src="Media/Icon/Blue/tooth.png" alt="" class="floating-tooth tooth-left" style="top: 30%;">
@@ -234,31 +260,91 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
 
 
 
+        <?php
+        // Load branches to display multiple locations (e.g., Bacoor, Makati)
+        // Join with `branch_info` so per-branch clinic info (name/description/phone/email/map) is used when available.
+        $branches_rs = $database->query(
+            "SELECT b.id, b.name, b.address, bi.address AS bi_address, bi.clinic_name AS bi_clinic_name, bi.clinic_description AS bi_clinic_description, bi.phone AS bi_phone, bi.email AS bi_email, bi.facebook_url AS bi_facebook_url, bi.instagram_url AS bi_instagram_url, bi.map_embed_url AS bi_map_embed_url FROM branches b LEFT JOIN branch_info bi ON bi.branch_id = b.id ORDER BY b.id ASC"
+        );
+        ?>
         <section id="contact">
             <div>
                 <h2 class="title">CONTACT US</h2>
             </div>
-            <div class="ffbox">
-                <div class="map-div">
-                    <iframe
-                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4649.764220180396!2d120.9899938758509!3d14.38450178607667!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397d19429d7ebcb%3A0x90241e6903f8399c!2sI%20Heart%20Dentist%20Dental%20Clinic%20Camella%20Branch!5e1!3m2!1sen!2sph!4v1761328700295!5m2!1sen!2sph"
-                        width="370" height="95%" allowfullscreen="" loading="lazy"
-                        referrerpolicy="no-referrer-when-downgrade">
-                    </iframe>
-                </div>
-                <div class="ffbox1">
-                    <h1 class="contact-title"><?= htmlspecialchars($clinic_info['clinic_name']) ?></h1>
-                    <p class="clinic-services"><?= htmlspecialchars($clinic_info['clinic_description']) ?></p>
-                    <div class="contact-info">
-                        <p><img src="Media/Icon/Blue/address.png" alt="Location" class="contact-icon">
-                            <?= htmlspecialchars($clinic_info['address']) ?></p>
-                        <p><img src="Media/Icon/Blue/phone.png" alt="Phone" class="contact-icon">
-                            <?= htmlspecialchars($clinic_info['phone']) ?></p>
-                        <p><img src="Media/Icon/Blue/mail.png" alt="Email" class="contact-icon">
-                            <?= htmlspecialchars($clinic_info['email']) ?></p>
+            <?php if ($branches_rs && $branches_rs->num_rows > 0): ?>
+                <div class="branches-grid">
+                <?php while ($branch = $branches_rs->fetch_assoc()):
+                    $branchName = isset($branch['name']) ? $branch['name'] : 'Branch';
+                    // Prefer per-branch address from `branch_info`, then branch table address, otherwise fallback.
+                    if (!empty($branch['bi_address'])) {
+                        $branchAddress = $branch['bi_address'];
+                    } elseif (isset($branch['address']) && trim($branch['address']) !== '') {
+                        $branchAddress = $branch['address'];
+                    } else {
+                        $branchAddress = $branchName . ', Philippines';
+                    }
+
+                    // Prefer per-branch values from `branch_info` (alias prefixed with bi_). Fall back to global `clinic_info`.
+                    $displayClinicName = !empty($branch['bi_clinic_name']) ? $branch['bi_clinic_name'] : $clinic_info['clinic_name'];
+                    // Only show per-branch clinic description when explicitly set. Do not fall back to global clinic_info to avoid showing a default placeholder.
+                    $displayClinicDescription = !empty($branch['bi_clinic_description']) ? $branch['bi_clinic_description'] : '';
+                    $displayPhone = !empty($branch['bi_phone']) ? $branch['bi_phone'] : $clinic_info['phone'];
+                    $displayEmail = !empty($branch['bi_email']) ? $branch['bi_email'] : $clinic_info['email'];
+                    $displayFacebook = !empty($branch['bi_facebook_url']) ? $branch['bi_facebook_url'] : $clinic_info['facebook_url'];
+                    $displayInstagram = !empty($branch['bi_instagram_url']) ? $branch['bi_instagram_url'] : $clinic_info['instagram_url'];
+
+                    // Determine map HTML: allow admin to provide either a full iframe or an embed URL. Otherwise build map by address.
+                    if (!empty($branch['bi_map_embed_url'])) {
+                        $raw = $branch['bi_map_embed_url'];
+                        if (stripos($raw, '<iframe') !== false) {
+                            $mapHtml = $raw; // assume admin-provided iframe markup
+                        } else {
+                            // treat as a URL to embed
+                            $mapHtml = '<iframe src="' . htmlspecialchars($raw) . '" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
+                        }
+                    } else {
+                        $mapSrc = 'https://www.google.com/maps?q=' . urlencode($branchAddress) . '&output=embed';
+                        $mapHtml = '<iframe src="' . htmlspecialchars($mapSrc) . '" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
+                    }
+
+                ?>
+                <div class="ffbox" style="margin-bottom: 24px;">
+                    <div class="map-div">
+                        <?php echo $mapHtml; ?>
+                    </div>
+                    <div class="ffbox1">
+                        <h1 class="contact-title"><?= htmlspecialchars($displayClinicName) ?> — <?= htmlspecialchars($branchName) ?></h1>
+                        <?php if (!empty($displayClinicDescription)): ?>
+                            <p class="clinic-services"><?= htmlspecialchars($displayClinicDescription) ?></p>
+                        <?php endif; ?>
+                        <div class="contact-info">
+                            <p><img src="Media/Icon/Blue/address.png" alt="Location" class="contact-icon"> <?= htmlspecialchars($branchAddress) ?></p>
+                            <p><img src="Media/Icon/Blue/phone.png" alt="Phone" class="contact-icon"> <?= htmlspecialchars($displayPhone) ?></p>
+                            <p><img src="Media/Icon/Blue/mail.png" alt="Email" class="contact-icon"> <?= htmlspecialchars($displayEmail) ?></p>
+                        </div>
                     </div>
                 </div>
-            </div>
+                <?php endwhile; ?>
+                </div>
+            <?php else: ?>
+                <!-- Fallback: single location (legacy) -->
+                <div class="ffbox">
+                    <div class="map-div">
+                        <iframe src="https://www.google.com/maps?q=<?= urlencode($clinic_info['address']) ?>&output=embed" width="370" height="95%" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                    </div>
+                    <div class="ffbox1">
+                        <h1 class="contact-title"><?= htmlspecialchars($clinic_info['clinic_name']) ?></h1>
+                        <?php if (!empty($clinic_info['clinic_description'])): ?>
+                            <p class="clinic-services"><?= htmlspecialchars($clinic_info['clinic_description']) ?></p>
+                        <?php endif; ?>
+                        <div class="contact-info">
+                            <p><img src="Media/Icon/Blue/address.png" alt="Location" class="contact-icon"> <?= htmlspecialchars($clinic_info['address']) ?></p>
+                            <p><img src="Media/Icon/Blue/phone.png" alt="Phone" class="contact-icon"> <?= htmlspecialchars($clinic_info['phone']) ?></p>
+                            <p><img src="Media/Icon/Blue/mail.png" alt="Email" class="contact-icon"> <?= htmlspecialchars($clinic_info['email']) ?></p>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
         </section>
     </main>
     <footer class="site-footer">
@@ -349,68 +435,85 @@ $clinic_info = $database->query("SELECT * FROM clinic_info WHERE id=1")->fetch_a
             const carousel = document.querySelector('.carousel');
             const prevButton = document.querySelector('.carousel-button.prev');
             const nextButton = document.querySelector('.carousel-button.next');
-            const cardWidth = document.querySelector('.card').offsetWidth + 20; // card width + gap
 
+            if (!carousel) return; // nothing to do
 
-            prevButton.addEventListener('click', function () {
-                carousel.scrollBy({ left: -cardWidth * 3, behavior: 'smooth' });
-            });
+            // Scroll by a page (visible width) to avoid overshooting to the end
+            function scrollByPage(direction) {
+                const page = carousel.clientWidth || window.innerWidth;
+                carousel.scrollBy({ left: direction * page, behavior: 'smooth' });
+            }
 
+            if (prevButton) {
+                prevButton.addEventListener('click', function () {
+                    scrollByPage(-1);
+                });
+            }
 
-            nextButton.addEventListener('click', function () {
-                carousel.scrollBy({ left: cardWidth * 3, behavior: 'smooth' });
-            });
-
+            if (nextButton) {
+                nextButton.addEventListener('click', function () {
+                    scrollByPage(1);
+                });
+            }
 
             // Hide buttons when at extremes
             function updateButtonVisibility() {
-                prevButton.style.display = carousel.scrollLeft <= 10 ? 'none' : 'flex';
-                nextButton.style.display = carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 10 ? 'none' : 'flex';
+                if (prevButton) prevButton.style.display = carousel.scrollLeft <= 10 ? 'none' : 'flex';
+                if (nextButton) nextButton.style.display = carousel.scrollLeft >= carousel.scrollWidth - carousel.clientWidth - 10 ? 'none' : 'flex';
             }
-
 
             carousel.addEventListener('scroll', updateButtonVisibility);
             updateButtonVisibility(); // Initial check
 
-
             // Handle window resize
             window.addEventListener('resize', function () {
-                cardWidth = document.querySelector('.card').offsetWidth + 20;
                 updateButtonVisibility();
             });
-        });
 
+            // Drag/Swipe support (desktop + touch)
+            let isDragging = false;
+            let startX = 0, scrollLeft = 0;
 
-        let isDragging = false;
-        let startX, scrollLeft;
+            carousel.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.pageX - carousel.offsetLeft;
+                scrollLeft = carousel.scrollLeft;
+                carousel.style.cursor = 'grabbing';
+            });
 
+            carousel.addEventListener('mouseleave', () => {
+                isDragging = false;
+                carousel.style.cursor = 'grab';
+            });
 
-        carousel.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            startX = e.pageX - carousel.offsetLeft;
-            scrollLeft = carousel.scrollLeft;
-            carousel.style.cursor = 'grabbing';
-        });
+            carousel.addEventListener('mouseup', () => {
+                isDragging = false;
+                carousel.style.cursor = 'grab';
+            });
 
+            carousel.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const x = e.pageX - carousel.offsetLeft;
+                const walk = (x - startX) * 1.5; // Adjust scroll speed
+                carousel.scrollLeft = scrollLeft - walk;
+            });
 
-        carousel.addEventListener('mouseleave', () => {
-            isDragging = false;
-            carousel.style.cursor = 'grab';
-        });
-
-
-        carousel.addEventListener('mouseup', () => {
-            isDragging = false;
-            carousel.style.cursor = 'grab';
-        });
-
-
-        carousel.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            e.preventDefault();
-            const x = e.pageX - carousel.offsetLeft;
-            const walk = (x - startX) * 2; // Adjust scroll speed
-            carousel.scrollLeft = scrollLeft - walk;
+            // Touch support
+            carousel.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                startX = e.touches[0].pageX - carousel.offsetLeft;
+                scrollLeft = carousel.scrollLeft;
+            });
+            carousel.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+            carousel.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                const x = e.touches[0].pageX - carousel.offsetLeft;
+                const walk = (x - startX) * 1.5;
+                carousel.scrollLeft = scrollLeft - walk;
+            });
         });
     </script>
 

@@ -25,10 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    header('Location: assign-branches.php');
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('assign-branches.php');
     exit;
 }
 
-header('Location: assign-branches.php');
+require_once __DIR__ . '/../inc/redirect_helper.php';
+redirect_with_context('assign-branches.php');
 exit;
 ?>

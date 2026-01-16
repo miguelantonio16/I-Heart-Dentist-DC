@@ -10,7 +10,8 @@ header("Expires: 0");
 
 // Redirect already logged-in admin
 if (isset($_SESSION["user"]) && $_SESSION['usertype'] === 'a') {
-    header("Location: dashboard.php");
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('dashboard.php');
     exit();
 }
 
@@ -59,6 +60,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($password == $admin['apassword']) {
                         $_SESSION['user'] = $email;
                         $_SESSION['usertype'] = 'a';
+                        // Set superadmin flag if present in the admin record
+                        $_SESSION['is_superadmin'] = (isset($admin['is_super']) && $admin['is_super'] == 1) ? 1 : 0;
+
+                        // Branch restriction mapping for special branch-scoped admin accounts
+                        $branchAdminMap = [
+                            'adminbacoor@edoc.com' => 'Bacoor',
+                            'adminmakati@edoc.com' => 'Makati'
+                        ];
+
+                        $lowerEmail = strtolower($email);
+                        if (isset($branchAdminMap[$lowerEmail])) {
+                            $branchName = $branchAdminMap[$lowerEmail];
+                            try {
+                                $branchId = null;
+                                $stmtB = $database->prepare("SELECT id FROM branches WHERE name = ? LIMIT 1");
+                                $stmtB->bind_param('s', $branchName);
+                                $stmtB->execute();
+                                $resB = $stmtB->get_result();
+                                if ($resB && $resB->num_rows === 1) {
+                                    $branchId = (int)($resB->fetch_assoc()['id']);
+                                } else {
+                                    $likeName = '%' . $branchName . '%';
+                                    $stmtB2 = $database->prepare("SELECT id FROM branches WHERE name LIKE ? LIMIT 1");
+                                    $stmtB2->bind_param('s', $likeName);
+                                    $stmtB2->execute();
+                                    $resB2 = $stmtB2->get_result();
+                                    if ($resB2 && $resB2->num_rows === 1) {
+                                        $branchId = (int)($resB2->fetch_assoc()['id']);
+                                    }
+                                }
+                                $_SESSION['restricted_branch_id'] = $branchId ? $branchId : null;
+                            } catch (Throwable $e) {
+                                $_SESSION['restricted_branch_id'] = null;
+                            }
+                        } else {
+                            // Clear any previous restrictions for other admins
+                            $_SESSION['restricted_branch_id'] = null;
+                        }
+
                         header("Location: dashboard.php");
                         exit();
                     } else {
@@ -152,13 +192,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ?>
                 </div>
                 <input type="submit" value="Log in" class="login-btn">
-                <label class="bottom-text">Forgot password? <a href="forgot-password.php" class="signup-link">Reset here</a></label>
                 <div class="login-actions">
                     <div class="role-buttons">
                         <a href="../dentist/login.php" class="role-btn dentist">Login as Dentist</a>
                         <a href="../patient/login.php" class="role-btn patient">Login as Patient</a>
                     </div>
                 </div>
+                <label class="bottom-text">Forgot password? <a href="forgot-password.php" class="signup-link">Reset here</a></label>
             </form>
         </div>
     </div>

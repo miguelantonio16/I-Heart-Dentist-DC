@@ -11,8 +11,10 @@ if ($_SESSION['usertype'] != 'd') {
     exit();
 }
 
-// Import database connection
+// Import database connection & helpers
 include("../connection.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
+include_once __DIR__ . '/../inc/get_profile_pic.php';
 date_default_timezone_set('Asia/Singapore');
 
 $useremail = $_SESSION["user"];
@@ -51,29 +53,82 @@ $sort_param = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 $sort_order = ($sort_param === 'oldest') ? 'DESC' : 'ASC';
 
 if (isset($_GET['search'])) {
-    $search = $_GET['search'];
-    $sqlmain = "SELECT DISTINCT patient.*, b.name AS branch_name FROM appointment INNER JOIN patient ON appointment.pid = patient.pid LEFT JOIN branches b ON patient.branch_id = b.id 
-               WHERE appointment.docid = '$userid' AND patient.status='active' 
-               AND (patient.pname LIKE '%$search%' OR patient.pemail LIKE '%$search%' OR patient.ptel LIKE '%$search%') 
-               ORDER BY patient.pname $sort_order LIMIT $start_from, $results_per_page";
+    $search = $database->real_escape_string($_GET['search']);
 
-    $sqlmain_inactive = "SELECT DISTINCT patient.*, b.name AS branch_name FROM appointment INNER JOIN patient ON appointment.pid = patient.pid LEFT JOIN branches b ON patient.branch_id = b.id 
-                        WHERE appointment.docid = '$userid' AND patient.status='inactive' 
-                        AND (patient.pname LIKE '%$search%' OR patient.pemail LIKE '%$search%' OR patient.ptel LIKE '%$search%')";
+        $sqlmain = "SELECT p.*, (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT b2.name ORDER BY b2.name SEPARATOR ', '), '')
+                    FROM branches b2
+                    WHERE b2.id IN (
+                        SELECT branch_id FROM patient_branches WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM appointment WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM patient WHERE pid = p.pid
+                    )
+                ) AS branch_names
+                FROM patient p
+                WHERE p.status='active'
+                AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid')
+                AND (p.pname LIKE '%$search%' OR p.pemail LIKE '%$search%' OR p.ptel LIKE '%$search%')
+                ORDER BY p.pname $sort_order
+                LIMIT $start_from, $results_per_page";
 
-    $count_query = "SELECT COUNT(DISTINCT patient.pid) as total FROM appointment INNER JOIN patient ON appointment.pid = patient.pid 
-                   WHERE appointment.docid = '$userid' AND patient.status='active' 
-                   AND (patient.pname LIKE '%$search%' OR patient.pemail LIKE '%$search%' OR patient.ptel LIKE '%$search%')";
+    
+    $sqlmain_inactive = "SELECT p.*, (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT b2.name ORDER BY b2.name SEPARATOR ', '), '')
+                    FROM branches b2
+                    WHERE b2.id IN (
+                        SELECT branch_id FROM patient_branches WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM appointment WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM patient WHERE pid = p.pid
+                    )
+                ) AS branch_names
+                FROM patient p
+                WHERE p.status='inactive'
+                AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid')
+                AND (p.pname LIKE '%$search%' OR p.pemail LIKE '%$search%' OR p.ptel LIKE '%$search%')";
+
+    $count_query = "SELECT COUNT(DISTINCT p.pid) as total FROM patient p WHERE p.status='active' AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid') AND (p.pname LIKE '%$search%' OR p.pemail LIKE '%$search%' OR p.ptel LIKE '%$search%')";
+
 } else {
-    $sqlmain = "SELECT DISTINCT patient.*, b.name AS branch_name FROM appointment INNER JOIN patient ON appointment.pid = patient.pid LEFT JOIN branches b ON patient.branch_id = b.id 
-               WHERE appointment.docid = '$userid' AND patient.status='active' 
-               ORDER BY patient.pname $sort_order LIMIT $start_from, $results_per_page";
+    // Not searching: return patients (active) who have appointments with this doctor and their branch names from all sources
+    
+        $sqlmain = "SELECT p.*, (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT b2.name ORDER BY b2.name SEPARATOR ', '), '')
+                    FROM branches b2
+                    WHERE b2.id IN (
+                        SELECT branch_id FROM patient_branches WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM appointment WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM patient WHERE pid = p.pid
+                    )
+                ) AS branch_names
+                FROM patient p
+                WHERE p.status='active'
+                AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid')
+                ORDER BY p.pname $sort_order
+                LIMIT $start_from, $results_per_page";
 
-    $sqlmain_inactive = "SELECT DISTINCT patient.*, b.name AS branch_name FROM appointment INNER JOIN patient ON appointment.pid = patient.pid LEFT JOIN branches b ON patient.branch_id = b.id 
-                        WHERE appointment.docid = '$userid' AND patient.status='inactive'";
+    
+    $sqlmain_inactive = "SELECT p.*, (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT b2.name ORDER BY b2.name SEPARATOR ', '), '')
+                    FROM branches b2
+                    WHERE b2.id IN (
+                        SELECT branch_id FROM patient_branches WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM appointment WHERE pid = p.pid
+                        UNION
+                        SELECT branch_id FROM patient WHERE pid = p.pid
+                    )
+                ) AS branch_names
+                FROM patient p
+                WHERE p.status='inactive'
+                AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid')";
 
-    $count_query = "SELECT COUNT(DISTINCT patient.pid) as total FROM appointment INNER JOIN patient ON appointment.pid = patient.pid 
-                   WHERE appointment.docid = '$userid' AND patient.status='active'";
+    $count_query = "SELECT COUNT(DISTINCT p.pid) as total FROM patient p WHERE p.status='active' AND EXISTS (SELECT 1 FROM appointment ap WHERE ap.pid = p.pid AND ap.docid = '$userid')";
 }
 
 $result_active = $database->query($sqlmain);
@@ -104,10 +159,24 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
         $tel = $row["ptel"];
         $address = $row["paddress"];
         $status = $row["status"];
-        $profile_pic = !empty($row["profile_pic"]) ? "../" . $row["profile_pic"] : "../Media/Icon/Blue/profile.png";
+        // Use shared helper for robust path resolution
+        $profile_pic = "../" . get_profile_pic($row);
 
-        $sqlHistory = "SELECT * FROM medical_history WHERE email='$email'";
-        $resultHistory = $database->query($sqlHistory);
+        // Fetch past (historical) appointments for this patient (limited)
+        // Fetch past appointments including all procedures (if multiple) via GROUP_CONCAT
+        $pastStmt = $database->prepare("SELECT a.appoid, a.appodate, a.appointment_time, a.status,
+            COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedures
+            FROM appointment a
+            LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+            LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+            LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+            WHERE a.pid=? AND a.docid=? AND (a.appodate < CURDATE() OR a.status = 'completed')
+            GROUP BY a.appoid, a.appodate, a.appointment_time, a.status
+            ORDER BY a.appodate DESC, a.appointment_time DESC
+            LIMIT 10");
+        $pastStmt->bind_param("ii", $id, $userid);
+        $pastStmt->execute();
+        $pastRes = $pastStmt->get_result();
 
         echo '
         <div id="patientModal" class="modal-container">
@@ -163,73 +232,38 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
                             <td class="label-td" colspan="2">' . $dob . '<br><br></td>
                         </tr>';
 
-        if ($resultHistory->num_rows > 0) {
-            $rowHistory = $resultHistory->fetch_assoc();
-            echo '
+        // Past appointments section replacing medical history
+        echo '
                         <tr>
-                            <td colspan="2" style="padding-top: 20px; text-align: center;">
-                                <h3>Medical History</h3>
+                            <td colspan="2" style="padding-top: 10px; text-align: center;">
+                                <h3>Past Appointments</h3>
                             </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Good Health:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["good_health"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Under Treatment:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["under_treatment"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Had a serious surgical operation:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["condition_treated"] ?: "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Had a serious illness:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["serious_illness"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Hospitalized:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["hospitalized"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Taking any prescription/non-prescription medication:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["medication"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Medication Specify:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["medication_specify"] ?: "-") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Use Tobacco:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["tobacco"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Use Alcohol or Dangerous Drugs:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["drugs"] ?? "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Have Allergies:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["allergies"] ?: "No") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Blood Pressure:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["blood_pressure"] ?: "-") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Bleeding Time:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["bleeding_time"] ?: "-") . '</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px;"><strong>Health Conditions:</strong></td>
-                            <td style="padding: 10px;">' . htmlspecialchars($rowHistory["health_conditions"] ?: "None") . '</td>
                         </tr>';
+        if ($pastRes && $pastRes->num_rows > 0) {
+            echo '<tr><td colspan="2" style="padding:0;">'
+                . '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:5px;">'
+                . '<tr style="background:#f5f5f5;">'
+                . '<th style="text-align:left;padding:6px;border:1px solid #ddd;">Date</th>'
+                . '<th style="text-align:left;padding:6px;border:1px solid #ddd;">Time</th>'
+                . '<th style="text-align:left;padding:6px;border:1px solid #ddd;">Procedure</th>'
+                . '<th style="text-align:left;padding:6px;border:1px solid #ddd;">Status</th>'
+                . '</tr>';
+            while ($pA = $pastRes->fetch_assoc()) {
+                $proceduresRaw = trim($pA['procedures']);
+                $proceduresDisplay = $proceduresRaw !== '' ? htmlspecialchars($proceduresRaw) : 'N/A';
+                $dateFmt = htmlspecialchars(date('M j, Y', strtotime($pA['appodate'])));
+                $timeFmt = htmlspecialchars(date('g:i A', strtotime($pA['appointment_time'])));
+                $statusFmt = htmlspecialchars(ucfirst($pA['status']));
+                echo '<tr>'
+                    . '<td style="padding:6px;border:1px solid #ddd;">' . $dateFmt . '</td>'
+                    . '<td style="padding:6px;border:1px solid #ddd;">' . $timeFmt . '</td>'
+                    . '<td style="padding:6px;border:1px solid #ddd;">' . $proceduresDisplay . '</td>'
+                    . '<td style="padding:6px;border:1px solid #ddd;">' . $statusFmt . '</td>'
+                    . '</tr>';
+            }
+            echo '</table></td></tr>';
         } else {
-            echo '
-                        <tr>
-                            <td colspan="2" style="padding: 20px; text-align: center;">
-                                <p>No medical history found for this patient.</p>
-                            </td>
-                        </tr>';
+            echo '<tr><td colspan="2" style="text-align:center;padding:15px 0;">No past appointments found.</td></tr>';
         }
 
         echo '
@@ -244,7 +278,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
         </div>';
     } else {
         echo "<script>alert('Patient not found!');</script>";
-        header("Location: patient.php");
+        redirect_with_context('patient.php');
         exit();
     }
 }
@@ -259,6 +293,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
     <link rel="stylesheet" href="../css/main.css">
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <link rel="stylesheet" href="../css/table.css">
     <title>Patient - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
@@ -392,8 +427,10 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -530,14 +567,15 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
                                             $dob = $row["pdob"];
                                             $tel = $row["ptel"];
                                             $status = $row["status"];
-                                            $profile_pic = !empty($row["profile_pic"]) ? "../" . $row["profile_pic"] : "../Media/Icon/Blue/profile.png";
+                                            // Resolve profile picture using helper (returns path relative to root)
+                                            $profile_pic = "../" . get_profile_pic($row);
 
                                             echo '<tr>
                                                 <td>
                                                     <img src="' . $profile_pic . '" alt="' . $name . '" class="profile-img-small">
                                                 </td>
                                                 <td><div class="cell-text">' . $name . '</div></td>
-                                                <td><div class="cell-text">' . (isset($row['branch_name']) ? htmlspecialchars($row['branch_name']) : '-') . '</div></td>
+                                                <td><div class="cell-text">' . (isset($row['branch_names']) && trim($row['branch_names']) !== '' ? htmlspecialchars($row['branch_names']) : '-') . '</div></td>
                                                 <td><div class="cell-text">' . $email . '</div></td>
                                                 <td><div class="cell-text">' . $tel . '</div></td>
                                                 <td><div class="cell-text">' . $dob . '</div></td>
@@ -696,33 +734,45 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
                             <?php
                             $upcomingAppointments = $database->query("
                                 SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time,
-                                    patient.pname as patient_name
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
+                                    a.appoid,
+                                    p.pname AS patient_name,
+                                    b.name AS branch_name,
+                                    a.appodate,
+                                    a.appointment_time,
+                                    COALESCE(
+                                        CONCAT_WS(', ',
+                                            NULLIF(pr.procedure_name, ''),
+                                            NULLIF(GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '), '')
+                                        ),
+                                        pr.procedure_name
+                                    ) AS procedures
+                                FROM appointment a
+                                INNER JOIN patient p ON a.pid = p.pid
+                                LEFT JOIN branches b ON b.id = a.branch_id
+                                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
                                 WHERE
-                                    appointment.docid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
+                                    a.docid = '$userid'
+                                    AND a.status IN ('appointment', 'booking')
+                                    AND a.appodate >= '$today'
+                                GROUP BY a.appoid, p.pname, b.name, a.appodate, a.appointment_time, pr.procedure_name
+                                ORDER BY a.appodate ASC, a.appointment_time ASC
                                 LIMIT 3;
                             ");
 
                             if ($upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                        htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                        ' • ' .
-                                        htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedures'] ?? '');
+                                    $patient = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $dateLine = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    $suffix = $branch ? (' - ' . $branch) : '';
+                                    echo '<div class="appointment-item">'
+                                        . '<h4 class="appointment-type">' . ($proc !== '' ? $proc : 'Appointment') . '</h4>'
+                                        . '<p class="appointment-date">With ' . $patient . '</p>'
+                                        . '<p class="appointment-date">' . $dateLine . $suffix . '</p>'
+                                    . '</div>';
                                 }
                             } else {
                                 echo '<div class="no-appointments">
@@ -801,6 +851,34 @@ if (isset($_GET['action']) && $_GET['action'] == 'view' && isset($_GET['id'])) {
                 });
             }
         });
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
 </body>
 

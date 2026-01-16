@@ -9,7 +9,8 @@ header("Expires: 0");
 
 // Redirect to dashboard if already logged in
 if (isset($_SESSION["user"]) && $_SESSION["usertype"] === 'd') {
-    header("Location: dashboard.php");
+    require_once __DIR__ . '/../inc/redirect_helper.php';
+    redirect_with_context('dashboard.php');
     exit();
 }
 
@@ -134,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <label class="bottom-text"><a href="forgot-password.php" class="signup-link">Forgot password?</a></label>
+                <label class="bottom-text">Forgot password? <a href="forgot-password.php" class="signup-link">Reset here</a></label>
             </form>
         </div>
     </div>

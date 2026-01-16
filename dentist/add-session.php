@@ -22,7 +22,8 @@
         $time=$_POST["time"];
         $sql="insert into schedule (docid,title,scheduledate,scheduletime,nop) values ($docid,'$title','$date','$time',$nop);";
         $result= $database->query($sql);
-        header("location: schedule.php?action=session-added&title=$title");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('schedule.php', ['action' => 'session-added', 'title' => $title]);
         
     }
 

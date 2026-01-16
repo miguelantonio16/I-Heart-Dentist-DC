@@ -23,7 +23,8 @@
     
     // Check if user is already logged in as admin
     if (isset($_SESSION["user"]) && $_SESSION['usertype'] == 'p') {
-        header("location: dashboard.php");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('dashboard.php');
         exit();
     }
 
@@ -86,6 +87,23 @@
             const sidebar = document.querySelector('.sidebar')
             sidebar.style.display = 'none'
         }
+    </script>
+    <script>
+        // Adjust top spacing so fixed header does not overlap the signup card
+        // Use a small visible gap (8px) under the header while reserving header height on body
+        function adjustTopSpacing() {
+            const nav = document.querySelector('nav');
+            if (!nav) return;
+            const headerHeight = nav.offsetHeight || 64;
+            // Reserve exact header height to prevent overlap
+            document.body.style.paddingTop = headerHeight + 'px';
+            // Keep the card close to the header with a small comfortable gap
+            document.querySelectorAll('.create-container, .signup-container').forEach(el => {
+                el.style.marginTop = '8px';
+            });
+        }
+        window.addEventListener('DOMContentLoaded', adjustTopSpacing);
+        window.addEventListener('resize', adjustTopSpacing);
     </script>
     <div class="signup-container">
         <div class="container">

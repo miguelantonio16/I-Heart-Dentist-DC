@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoid'])) {
         FROM appointment a
         JOIN patient p ON a.pid = p.pid
         JOIN doctor d ON a.docid = d.docid
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
+        LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
         WHERE a.appoid = ?
     ");
     $query->bind_param("i", $appoid);
@@ -43,6 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoid'])) {
         echo json_encode(['status' => false, 'msg' => 'Appointment not found.']);
         exit;
     }
+
+    // Fallback for missing procedure name
+    $procedureText = !empty($appointment['procedure_name']) ? $appointment['procedure_name'] : 'To be assigned by the clinic';
 
     // Determine if this is a booking or appointment
     $isBooking = ($appointment['status'] === 'booking');
@@ -81,15 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoid'])) {
         if ($deleteQuery->execute()) {
             // Create appropriate notification for patient
             $notificationTitle = $isBooking ? "Booking Rejected" : "Appointment Cancelled";
-            $notificationMessage = $isBooking 
-                ? "Your booking for " . $appointment['procedure_name'] . " on " . 
-                  date('M j, Y', strtotime($appointment['appodate'])) . " at " . 
-                  date('g:i A', strtotime($appointment['appointment_time'])) . 
-                  " has been rejected. Reason: " . $full_reason
-                : "Your appointment for " . $appointment['procedure_name'] . " on " . 
-                  date('M j, Y', strtotime($appointment['appodate'])) . " at " . 
-                  date('g:i A', strtotime($appointment['appointment_time'])) . 
-                  " has been cancelled. Reason: " . $full_reason;
+                        $notificationMessage = $isBooking 
+                                ? "Your booking for " . $procedureText . " on " . 
+                                    date('M j, Y', strtotime($appointment['appodate'])) . " at " . 
+                                    date('g:i A', strtotime($appointment['appointment_time'])) . 
+                                    " has been rejected. Reason: " . $full_reason
+                                : "Your appointment for " . $procedureText . " on " . 
+                                    date('M j, Y', strtotime($appointment['appodate'])) . " at " . 
+                                    date('g:i A', strtotime($appointment['appointment_time'])) . 
+                                    " has been cancelled. Reason: " . $full_reason;
             
             $notificationQuery = $con->prepare("
                 INSERT INTO notifications (user_id, user_type, title, message, related_id, related_type, created_at, is_read)
@@ -125,14 +128,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoid'])) {
                 // Content
                 $mail->isHTML(true);
                 $mail->Subject = $notificationTitle;
-                $mail->Body = "
+                    $mail->Body = "
                     <h3>$notificationTitle</h3>
                     <p>Your " . ($isBooking ? 'booking' : 'appointment') . " has been $newStatus by the clinic.</p>
                     <p><strong>Patient Name:</strong> {$appointment['pname']}</p>
                     <p><strong>Dentist Name:</strong> {$appointment['docname']}</p>
                     <p><strong>Date:</strong> " . date('F j, Y', strtotime($appointment['appodate'])) . "</p>
                     <p><strong>Time:</strong> {$appointment['appointment_time']}</p>
-                    <p><strong>Procedure:</strong> {$appointment['procedure_name']}</p>
+                    <p><strong>Procedure:</strong> {$procedureText}</p>
                     <p><strong>Reason:</strong> $full_reason</p>
                     <p>Please contact the clinic if you wish to reschedule or for more information.</p>
                 ";

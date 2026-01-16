@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/overrides.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Dentist - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
 
@@ -112,8 +114,10 @@
     $require_branch = false;
     if (!empty($user_branch_id)) {
         $user_branch_id_esc = $database->real_escape_string($user_branch_id);
-        // filter doctors that are assigned to the same branch via mapping
-        $branch_condition = "AND doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id = '$user_branch_id_esc')";
+        // Filter doctors by branch using BOTH mapping table and legacy direct column
+        // This ensures dentists assigned via older admin screens (doctor.branch_id)
+        // or newer multi-branch mapping (doctor_branches) will appear.
+        $branch_condition = "AND (doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id = '$user_branch_id_esc') OR doctor.branch_id = '$user_branch_id_esc')";
     } else {
         // If patient has no branch assigned, require branch assignment before showing doctors
         $require_branch = true;
@@ -145,9 +149,11 @@
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -289,7 +295,16 @@
                                             <td><div class="cell-text"><?php echo $row['docname']; ?></div></td>
                                             <td><div class="cell-text"><?php echo $row['docemail']; ?></div></td>
                                             <td><div class="cell-text"><?php echo $row['doctel']; ?></div></td>
-                                            <td><div class="cell-text"><?php echo isset($row['branch_name']) && $row['branch_name'] !== null ? htmlspecialchars($row['branch_name']) : '-'; ?></div></td>
+                                            <td><div class="cell-text"><?php
+                                                $branchCell = '-';
+                                                if (isset($row['branch_name']) && $row['branch_name'] !== null && $row['branch_name'] !== '') {
+                                                    $branchCell = htmlspecialchars($row['branch_name']);
+                                                } elseif (!empty($_SESSION['active_branch_name'])) {
+                                                    // Fallback to patient's active branch when doctor has no branch assigned in DB
+                                                    $branchCell = htmlspecialchars($_SESSION['active_branch_name']);
+                                                }
+                                                echo $branchCell;
+                                            ?></div></td>
                                         </tr>
                                     <?php endwhile; ?>
                                 </tbody>
@@ -450,46 +465,63 @@
                         </div>
                     </div>
 
-                    <div class="upcoming-appointments">
-                        <h3>Upcoming Appointments</h3>
-                        <div class="appointments-content">
-                            <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                WHERE
-                                    appointment.pid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
-                            ");
+                    
+                                    <div class="upcoming-appointments">
+                                        <h3>Upcoming Appointments</h3>
+                                        <div class="appointments-content">
+                                            <?php
+                                            $sql = "SELECT
+                                                        a.appoid,
+                                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                                        a.appodate,
+                                                        a.appointment_time,
+                                                        d.docname as doctor_name,
+                                                        b.name AS branch_name
+                                                    FROM appointment a
+                                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                                    LEFT JOIN branches b ON a.branch_id = b.id
+                                                    WHERE
+                                                        a.pid = '$userid'
+                                                        AND a.status = 'appointment'
+                                                        AND a.appodate >= '$today'
+                                                    GROUP BY a.appoid
+                                                    ORDER BY a.appodate ASC, a.appointment_time ASC
+                                                    LIMIT 3";
 
-                            if ($upcomingAppointments->num_rows > 0) {
-                                while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
-                                }
-                            } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>
-                                </div>';
-                            }
-                            ?>
-                        </div>
-                    </div>
+                                            $upcomingAppointments = $database->query($sql);
+
+                                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
+                                                while ($appointment = $upcomingAppointments->fetch_assoc()) {
+                                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                                    $date_str = '';
+                                                    $time_str = '';
+                                                    if (!empty($appointment['appodate'])) {
+                                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                                    }
+                                                    if (!empty($appointment['appointment_time'])) {
+                                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                                    }
+                                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                                    echo '<div class="appointment-item">';
+                                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                                    if ($branch && $branch !== '-') {
+                                                        $datetime .= ' - ' . $branch;
+                                                    }
+                                                    echo '<p class="appointment-date">' . $datetime . '</p>';
+                                                    echo '</div>';
+                                                }
+                                            } else {
+                                                echo '<div class="no-appointments">                                    <p>No upcoming appointments scheduled</p>                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>                                </div>';
+                                            }
+                                            ?>
+                                        </div>
+                                    </div>
                 </div>
             </div>
         </div>
@@ -649,6 +681,34 @@ function markAllAsRead() {
             // Debug - check current URL parameters
             console.log('Current URL parameters:', window.location.search);
         });
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
 </body>
 

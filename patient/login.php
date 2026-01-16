@@ -169,7 +169,8 @@ if (isset($_SESSION["user"]) && !empty($_SESSION["user"])) {
     switch ($_SESSION['usertype']) {
         case 'p':
             ob_end_clean();
-            header("location: dashboard.php");
+            require_once __DIR__ . '/../inc/redirect_helper.php';
+            redirect_with_context('dashboard.php');
             exit();
         case 'd':
             ob_end_clean();

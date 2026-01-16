@@ -53,10 +53,8 @@ nav{
     left: 0;
     width: 100%;
     z-index: 2000;
-    padding: 5px 40px;
+    padding: 5px 1rem; /* tightened horizontal padding so logo sits nearer left */
     transition: all 0.2s ease;
-    padding-left: 5%;
-    padding-right: 5%;
 }
 nav ul{
     list-style: none;
@@ -84,8 +82,9 @@ nav a:hover{
 }
 nav li:first-child{
     margin-right: auto;
-    margin-left: -40px;
+    margin-left: 0; /* keep zero offset; logo will use nav padding */
 }
+.logo-name{ margin-left: -6px; }
 .logo-name{
     width: 65px;
     height: auto;
@@ -96,6 +95,13 @@ nav li:first-child{
     --color: #7fa1c3;
     padding: 0.8em 1.7em;
     background-color: transparent;
+
+    /* Make the device mock smaller on very small screens */
+    .device-container { max-width: 240px; margin-top: 0.8rem; }
+    .device-frame { max-width: 240px; width: 100% !important; box-shadow: 0 10px 20px rgba(0,0,0,0.12); }
+    /* Slightly reduce tagline size if necessary */
+    .tagline1 { font-size: 34px; }
+    .tagline2 { font-size: 30px; }
     border-radius: 10em;
     position: relative;
     overflow: hidden;
@@ -108,6 +114,13 @@ nav li:first-child{
     margin-right: 10px;
     margin-top: 5px;
     border: 1px solid;
+}
+
+/* Additional constraint for small-to-medium phones to make the mock less dominant */
+@media (max-width: 420px) {
+    .device-container { max-width: 200px; }
+    .device-frame { max-width: 200px; }
+    .device-frame .website-content { transform: scale(0.95); transform-origin: top center; }
 }
 .reg-btn::before, .reg-btn::after {
     content: '';
@@ -224,6 +237,10 @@ nav li:first-child{
         display: block;
     }
 }
+@media (max-width: 480px) {
+    nav { padding-left: 0.4rem; padding-right: 0.4rem; }
+    .logo-name { width: 46px; margin-left: -4px; }
+}
 @media(max-width: 400px){
     .sidebar{
         width: 100%;
@@ -272,6 +289,8 @@ nav li:first-child{
     flex-direction: column;
     justify-content: center;
     height: 100%;
+    padding-left: clamp(1rem, 6vw, 6rem); /* replace fixed margins with responsive padding */
+    padding-right: 2rem;
 }
 .row.no-gutters {
     margin-left: 0;
@@ -307,21 +326,17 @@ nav li:first-child{
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
     color: #6491bb;
-    /*text-shadow: 
-        1px 1px 3px rgba(0, 0, 0, 0.43), 
-        2px 2px 5px rgba(0, 0, 0, 0.363);*/
     animation: slideInLeft 0.8s ease-out;
-    line-height: 1.2;
-    margin-bottom: 20px;
-    margin-left: 8rem;
+    line-height: 1.05;
+    margin-bottom: 12px;
 }
 .tagline1 {
-    font-size: 70px; 
+    font-size: clamp(36px, 6vw, 70px);
 }
 
 .tagline2 {
-    font-size: 70px; 
-    margin-top: -30px;
+    font-size: clamp(28px, 5vw, 56px);
+    margin-top: -10px;
 }
 
 .highlight{
@@ -344,13 +359,30 @@ nav li:first-child{
 .description {
     font-family: 'Montserrat', sans-serif;
     font-weight: 400;
-    font-size: clamp(14px, 2vw, 17px);
+    font-size: clamp(15px, 1.6vw, 17px);
     color: #303030;
-    line-height: 1.7;
-    margin: 0 0 2em 1rem;
-    max-width: 600px;
-    padding-right: 1rem; 
-    margin-left: 8rem;
+    line-height: 1.75;
+    margin: 0 0 1.25em 0;
+    max-width: 620px;
+    /* readable panel */
+    background: rgba(255, 255, 255, 0.96);
+    padding: 22px 24px 22px 56px; /* extra left padding for accent */
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+    display: block;
+    position: relative;
+    border-left: 6px solid rgba(100,145,187,0.15);
+}
+
+.description::before{
+    content: "“";
+    position: absolute;
+    left: 18px;
+    top: 8px;
+    font-size: 48px;
+    line-height: 1;
+    color: rgba(100,145,187,0.12);
+    font-family: serif;
 }
 
 /************Register & Login*************/
@@ -358,7 +390,7 @@ nav li:first-child{
     display: flex;
     gap: 20px; 
     flex-wrap: wrap;
-    margin-left: 3rem; 
+    margin-top: 1rem;
 }
 
 button {
@@ -444,6 +476,24 @@ button:hover {
 }
 .register:hover{
     color: #ffffff;
+}
+
+/* CTA style for the homepage 'Get started' anchor */
+.cta-getstarted {
+    display: inline-block;
+    padding: clamp(0.6em, 1.5vw, 0.8em) clamp(1em, 3vw, 1.7em);
+    background-color: #6491bb;
+    color: #ffffff;
+    border-radius: 10em;
+    font-weight: 600;
+    text-align: center;
+    min-width: 160px;
+    box-shadow: 0 6px 18px rgba(100,145,187,0.15);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.cta-getstarted:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 22px rgba(100,145,187,0.18);
 }
 
 .rightside {
@@ -768,7 +818,7 @@ button:hover {
 /**********************************************SERVICES****************************************************/
 #services {
     background: white;
-    padding-bottom: 20em;
+    padding-bottom: 6em;
     position: relative;
     padding-left: 5%;
     padding-right: 5%;
@@ -897,24 +947,41 @@ button:hover {
 }
 .card-content .description {
     display: none;
-    color: white;
-    font-size: 20px;
-    font-weight: 300;
-    text-align: center; 
+    color: #f5f9fd;                /* High-contrast against darkened image */
+    font-size: 18px;
+    font-weight: 400;
+    text-align: left;              /* Easier scanning for sentences */
     position: absolute; 
-    top: 40%; 
+    top: 50%; 
     left: 50%; 
     transform: translate(-50%, -50%); 
-    padding: 10px;
+    padding: 14px 18px 14px 54px;   /* Room for decorative quote */
     box-sizing: border-box;
-    width: 90%; 
-    transition: all 0.5s ease;
+    width: 82%; 
+    transition: all 0.35s ease;
     margin: 0 auto;
-    
+    background: linear-gradient(135deg, rgba(22,46,72,0.78), rgba(34,74,115,0.72));
+    border-radius: 14px;
+    backdrop-filter: blur(2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    line-height: 1.5;
+    letter-spacing: 0.3px;
 }
 .card-content:hover .description {
     display: block;  
     cursor: pointer;
+}
+/* Decorative opening quote inside hover description */
+.card-content .description:before {
+    content: "\201C"; /* Opening curly quote */
+    position: absolute;
+    left: 18px;
+    top: 8px;
+    font-size: 46px;
+    line-height: 1;
+    color: rgba(255,255,255,0.25);
+    font-family: Georgia, serif;
+    pointer-events: none;
 }
 .group {
     display: flex;
@@ -1040,59 +1107,87 @@ button:hover {
 /**********************************************CONTACT****************************************************/
 #contact {
     background-color: #ffffff;
-    padding-top: 5em;
-    padding-bottom: 7em;
+    padding-top: 2.5rem;
+    padding-bottom: 3.5rem;
     padding-left: 5%;
     padding-right: 5%;
 }
+
+#contact .branches-grid{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.branches-grid .ffbox{
+    width: auto; /* let grid control width */
+    padding: 0.9rem 1rem; /* tighter inside grid */
+    background: transparent;
+    border-radius: 12px;
+    box-sizing: border-box;
+}
+
 #contact .title{
     color: #6491bb;
 }
+
 .map-div {
-    flex: 1; 
-    padding-right: 1em; 
+    flex: 1;
+    padding-right: 0.5rem;
     background-color: transparent;
-    min-height: 26em;
+    min-height: 12.5rem;
 }
-.map-div iframe {
+
+.map-div iframe,
+.map-div img,
+.map-div > * {
+    width: 100% !important;
+    height: auto !important;
     border: 0;
-    padding: 1px;
-    min-height: 26em;
+    border-radius: 12px;
+    display: block;
 }
+
 iframe {
-    width: 100%; 
-    height: 100%; 
+    width: 100%;
+    height: 100%;
     border-radius: 1em;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.215);
 }
+
 .ffbox {
     display: flex;
     width: 100%;
     justify-content: space-between;
-    padding: 2em;
-    gap: 2em;
-    min-height: 25em;
+    padding: 1rem;
+    gap: 1rem;
+    min-height: auto;
 }
+
 .ffbox1 {
-    flex: 0.8; 
-    padding-left: 2em;
+    flex: 0.8;
+    padding-left: 0.75rem;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    padding-top: 10px;
+    padding-top: 6px;
+    text-align: left; /* align branch info to the left */
+    align-items: flex-start; /* ensure child items start from the left */
 }
+
 .contact-title {
     font-weight: 600;
-    font-size: 40px;
-    text-align: center;
+    font-size: 34px;
+    text-align: left;
     color: #303030;
-    margin-top: 20px;
-    margin-bottom: 30px;
+    margin-top: 12px;
+    margin-bottom: 18px;
 }
+
 .clinic-services {
     font-weight: 400;
-    font-size: 20px;
-    margin-bottom: 40px;
+    font-size: 18px;
+    margin-bottom: 18px;
     text-align: center;
     color: #000000;
 }
@@ -1100,56 +1195,101 @@ iframe {
 .contact-info {
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    margin-top: 20px;
+    gap: 12px;
+    margin-top: 12px;
 }
+
 .contact-info p {
     display: flex;
     align-items: center;
-    font-size: 18px;
-    line-height: 2;
-    margin-bottom: 10px;
+    font-size: 16px;
+    line-height: 1.8;
+    margin-bottom: 8px;
     color: #000000;
+    word-break: break-word;
 }
+
+.contact-info, .contact-info p, .contact-info a {
+    overflow-wrap: anywhere;
+}
+
 .contact-icon {
-    width: 35px; 
+    width: 35px;
     height: 35px;
-    margin-right: 15px;
+    margin-right: 12px;
     object-fit: contain;
 }
+
 @media screen and (max-width: 768px) {
+    /* Stack branches vertically so each branch's map sits above its details */
+    #contact .branches-grid{ gap: 12px; grid-template-columns: 1fr; }
+    .branches-grid .ffbox{ width: 100%; }
     .ffbox {
         flex-direction: column;
+        padding: 0.8rem;
     }
-    
+
     .map-div {
-        min-height: 20em;
-        margin-bottom: 2em;
+        min-height: 10rem;
+        margin-bottom: 0.75rem;
+        order: 0; /* ensure map stays above text */
     }
+    .map-div iframe { min-height: 10rem; }
+    .ffbox1 {
+        padding-left: 0;
+        text-align: left; /* keep left alignment on stacked layout */
+        order: 1; /* description follows map */
+        align-items: flex-start;
+    }
+    .contact-info p {
+        justify-content: flex-start; /* left-align inline contact rows */
+        align-items: flex-start;
+    }
+}
+
+/* Strong override: ensure branch info is left-aligned regardless of other rules */
+.ffbox1, .ffbox1 .contact-title, .ffbox1 .clinic-services, .ffbox1 .contact-info {
+    text-align: left !important;
+    align-items: flex-start !important;
+}
+.ffbox1 .contact-info p {
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+}
+
+/* Small screens: ensure map stays above and text left-aligned */
+@media (max-width: 768px) {
+    .ffbox1, .ffbox1 .contact-title, .ffbox1 .clinic-services, .ffbox1 .contact-info {
+        text-align: left !important;
+        align-items: flex-start !important;
+    }
+    .ffbox1 .contact-info p { justify-content: flex-start !important; }
 }
 
 /**********************************************FOOTER****************************************************/
 .site-footer {
     /**background-color: #101321;**/
     background-color: #6491bb;
-    padding: 30px 0 30px;
+    padding: 12px 0; /* slightly larger footer for desktop readability */
     font-size: 15px;
-    line-height: 24px;
+    line-height: 20px;
     color: #ffffff;
     width: 100%;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
 }
 
 .footer-container {
-    max-width: 1200px; 
-    margin: 0 auto; 
-    padding: 0 20px; 
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 12px; /* tighter horizontal padding */
 }
 
 .footer-row {
     display: flex;
     justify-content: space-between;
-    align-items: center; 
-    height: 100%; 
+    align-items: center;
+    gap: 6px;
 }
 
 .footer-column {
@@ -1184,16 +1324,17 @@ iframe {
 .social-icons a {
     color: #ffffff;
     background-color: transparent;
-    border: 1px solid white; 
-    width: 40px; 
-    height: 40px;
-    line-height: 40px;
+    border: 1px solid white;
+    width: 36px; /* larger icons on desktop */
+    height: 36px;
+    line-height: 36px;
     border-radius: 50%;
     text-align: center;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: all 0.2s linear;
+    transition: all 0.12s linear;
+    font-size: 16px;
 }
 
 .social-icons a:hover {
@@ -1222,6 +1363,66 @@ iframe {
 }
 
 /* Responsive adjustments */
+
+/* Responsive adjustments for a broad range of phones and tablets */
+@media (max-width: 1200px) {
+    .tagline1 { font-size: 64px; }
+    .tagline2 { font-size: 40px; }
+    .device-frame { width: 360px; max-width: 40vw; }
+}
+
+@media (max-width: 992px) {
+    .tagline1 { font-size: 48px; }
+    .tagline2 { font-size: 34px; }
+    .device-container { max-width: 340px; }
+    .device-frame { width: 340px; }
+    .leftside { padding: 1.25rem; text-align: center; }
+    nav a { padding: 0 14px; font-size: 15px; }
+}
+
+@media (max-width: 768px) {
+    .tagline1 { font-size: 36px; }
+    .tagline2 { font-size: 28px; }
+    .leftside { padding: 1rem; }
+    .device-container { display: block; margin: 1rem auto; max-width: 320px; width: 90%; }
+    .device-frame { width: 100% !important; max-width: 320px; }
+    .rightside { justify-content: center; }
+    nav { padding: 6px 1rem; }
+    .logo-name { width: 56px; }
+}
+
+@media (max-width: 576px) {
+    .tagline1 { font-size: 28px; }
+    .tagline2 { font-size: 22px; }
+    .device-container { display: none; }
+    .description { padding: 0 1rem; }
+    nav a { padding: 0 10px; }
+    .logo-name { width: 52px; }
+}
+
+@media (max-width: 420px) {
+    .tagline1 { font-size: 22px; }
+    .tagline2 { font-size: 18px; }
+    .logo-name { width: 48px; }
+    .cta-getstarted { min-width: 120px; }
+}
+/* Desktop-specific enhancements for contact maps and footer */
+@media (min-width: 992px) {
+    /* Make contact maps taller on desktop */
+    .map-div { min-height: 18rem; }
+    .map-div iframe, .map-div > * { height: 18rem !important; }
+
+    /* Increase social icons slightly on larger screens */
+    .site-footer { padding: 14px 0; font-size: 15px; }
+    .social-icons a { width: 40px; height: 40px; line-height: 40px; font-size: 18px; }
+}
+
+@media (min-width: 1200px) {
+    .map-div { min-height: 20rem; }
+    .map-div iframe, .map-div > * { height: 20rem !important; }
+    .site-footer { padding: 16px 0; }
+    .social-icons a { width: 44px; height: 44px; line-height: 44px; font-size: 20px; }
+}
 @media (max-width: 767px) {
     .footer-row {
         flex-direction: column;
@@ -1234,15 +1435,32 @@ iframe {
     }
 
     .social-icons {
-        margin-top: 10px;
+        margin-top: 6px;
     }
 }
 
+    /* keep icons visible on small phones but slightly smaller */
+    @media (max-width: 420px) {
+        .social-icons { display: flex; gap: 10px; margin-top: 6px; justify-content: center; }
+        .social-icons a { width: 26px; height: 26px; line-height: 26px; font-size: 12px; border-width: 1px; }
+    }
+
 /**********************************************DIVIDER****************************************************/
 .nextpage {
-    margin-top: 8em;
-    margin-bottom: 15em;
+    margin-top: 3em;
+    margin-bottom: 6em;
     background-color: transparent;
+}
+
+/* Tighter spacing for various viewport sizes */
+@media (max-width: 992px) {
+    .nextpage { margin-top: 2.5rem; margin-bottom: 4rem; }
+    #services { padding-bottom: 4.5rem; }
+}
+
+@media (max-width: 420px) {
+    .nextpage { margin-top: 1rem; margin-bottom: 2rem; }
+    #services { padding-bottom: 2.5rem; }
 }
 
 
@@ -1294,17 +1512,78 @@ iframe {
         font-size: 50px;
         padding-left: 0;
         text-align: center;
-        margin-left: 3rem;
+        margin-left: 0; /* remove forced left margin so center works */
     }
 
+    /* Ensure fixed nav does not overlap top content on mobile */
+    body {
+        padding-top: 80px; /* reserve more space for the fixed header */
+    }
+
+    /* Stronger fix for pages that use centered/create containers (signup, create-account) */
+    .create-container, .signup-container {
+        margin-top: 80px !important; /* push the container below the header */
+        padding-top: 0 !important;
+        height: auto !important; /* avoid full-viewport heights that hide content under nav */
+    }
+
+    /* Ensure the white card inside create/signup has a small top offset and normal flow */
+    .create-container .container, .signup-container .container {
+        margin-top: 0 !important;
+        padding-top: 1rem !important;
+        width: 96% !important;
+        box-sizing: border-box;
+    }
     .description {
-        margin-left: 3rem;
-        padding-right: 2rem;
+        margin: 0 auto 1.25em auto;
+        padding: 16px 18px; /* reduce heavy left padding for small screens */
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     .register-login {
-        margin-left: 3rem;
+        margin-left: 0;
         justify-content: center;
+        text-align: center;
+    }
+    /* Center CTA button reliably on mobile */
+    .register-login { display:flex; justify-content:center; align-items:center; }
+    .cta-getstarted { display:block; margin: 0.5rem auto 1rem auto; min-width: 140px; }
+    /* Prevent any accidental horizontal overflow on mobile */
+    html, body { overflow-x: hidden; }
+
+    /* Ensure the mock device cannot overflow the viewport */
+    .device-container { margin-right: 0 !important; max-width: 360px; width: 100%; }
+    .device-frame { width: 100% !important; max-width: 360px; box-sizing: border-box; }
+
+    /* Tighter nav padding on small screens to avoid overflow */
+    nav { padding-left: 1rem; padding-right: 1rem; }
+    nav ul { padding-left: 0; padding-right: 0; }
+    /* Protect CTA from overlap by device mock */
+    .cta-getstarted {
+        position: relative;
+        z-index: 30;
+    }
+    .device-container {
+        margin-top: 1.5rem; /* push device below CTA */
+        margin-right: 0 !important;
+    }
+    /* Center the mock device on small screens and prevent it from overflowing */
+    .rightside {
+        justify-content: center !important;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .device-container {
+        margin: 0 auto;
+        max-width: 360px;
+        margin-right: 0;
+        width: 100%;
+    }
+    .device-frame {
+        width: 100% !important;
+        max-width: 360px;
+        transform: none;
     }
     .register-login button:first-child {
         margin-left: 0;
@@ -1341,10 +1620,12 @@ iframe {
     }
     .ffbox1 {
         padding-left: 0;
-        text-align: center;
+        text-align: left;
+        align-items: flex-start;
     }
     .contact-info p {
-        justify-content: center;
+        justify-content: flex-start;
+        align-items: flex-start;
     }
 }
 
@@ -1355,8 +1636,16 @@ iframe {
     }
 
     /* NAVIGATION */
+    /* Make the clinic logo and small navbar icon appropriately sized on very small screens */
     .logo-name {
-        width: 100px;
+        width: 56px;
+    }
+    .navbar-logo {
+        width: 28px;
+    }
+    .menu-button img, .navbar-logo {
+        width: 28px;
+        height: auto;
     }
     .reg-btn, .log-btn {
         padding: 0.6em 1em;
@@ -1466,6 +1755,29 @@ iframe {
 
 .help-modal {
     display: none;
+
+/* EXTRA SMALL SCREEN TUNING: reduce or hide the device mock so CTA remains visible */
+@media (max-width: 420px) {
+    .device-container, .device-frame {
+        max-width: 180px !important;
+        width: 180px !important;
+    }
+    .device-frame .website-content {
+        transform: scale(0.9);
+        transform-origin: top center;
+    }
+    /* ensure CTA is centered and on top */
+    .register-login { justify-content: center !important; }
+    .cta-getstarted { margin: 0.5rem auto 1rem auto !important; z-index: 40; }
+}
+
+/* Hide the mock entirely on very narrow devices to eliminate overlap */
+@media (max-width: 360px) {
+    .device-container, .device-frame { display: none !important; }
+    /* give the hero extra breathing room when the device is removed */
+    .leftside { padding-bottom: 1.5rem; }
+    .cta-getstarted { min-width: 120px; }
+}
     position: fixed;
     z-index: 1001;
     left: 0;

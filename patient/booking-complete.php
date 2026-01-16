@@ -42,7 +42,8 @@ if ($_POST) {
                     VALUES ('$scheduleid', '$userid', '$date', '$apponum', $branch_sql, 'booking')";
         $result = $database->query($sql2);
         //echo $apponom;
-        header("location: my_booking.php?action=booking-added&id=" . $apponum . "&titleget=none");
+        require_once __DIR__ . '/../inc/redirect_helper.php';
+        redirect_with_context('my_booking.php', ['action' => 'booking-added', 'id' => $apponum, 'titleget' => 'none']);
 
     }
 }

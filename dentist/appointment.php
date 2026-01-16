@@ -30,7 +30,7 @@ if (isset($_GET['page'])) {
 $start_from = ($page - 1) * $results_per_page;
 
 // Search functionality
-$search = "";
+$search = isset($_GET['search']) ? $_GET['search'] : '';
 $sort_param = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 $sort_order = ($sort_param === 'oldest') ? 'DESC' : 'ASC';
 
@@ -59,6 +59,7 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>My Appointments - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -241,8 +242,10 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -341,19 +344,27 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                     </div>
 
                     <?php
-                    $sqlmain = "SELECT 
-                                appointment.appoid, 
-                                procedures.procedure_name, 
-                                patient.pname, 
-                                patient.pemail,
-                                patient.profile_pic,
-                                appointment.appodate, 
-                                appointment.appointment_time 
-                            FROM appointment
-                            INNER JOIN patient ON appointment.pid = patient.pid
-                            INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                            WHERE appointment.docid = '$userid' 
-                              AND appointment.status = 'appointment'";
+                                        $sqlmain = "SELECT 
+                                                                                    appointment.appoid, 
+                                                                                    procedures.procedure_name, 
+                                                                                    patient.pname, 
+                                                                                    patient.pemail,
+                                                                                    patient.profile_pic,
+                                                                                    appointment.appodate, 
+                                                                                    appointment.appointment_time,
+                                                                                    b.name AS branch_name
+                                                                            FROM appointment
+                                                                            INNER JOIN patient ON appointment.pid = patient.pid
+                                                                            LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                                                            LEFT JOIN branches b ON patient.branch_id = b.id
+                                                                            WHERE appointment.docid = '$userid' 
+                                                                                AND appointment.status = 'appointment'";
+
+                                        // Add search filter (patient name or procedure)
+                                        if (!empty($search)) {
+                                            $s = $database->real_escape_string($search);
+                                            $sqlmain .= " AND (patient.pname LIKE '%$s%' OR procedures.procedure_name LIKE '%$s%')";
+                                        }
 
                     if (isset($_POST['filter'])) {
                         $filterDate = $_POST['appodate'];
@@ -375,16 +386,17 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
 
                     $result = $database->query($sqlmain);
 
-                    // Count query for pagination
+                    // Count query for pagination (only this doctor's appointments)
                     $count_query = "SELECT COUNT(*) as total 
                FROM appointment 
                INNER JOIN patient ON appointment.pid = patient.pid 
-               INNER JOIN doctor ON appointment.docid = doctor.docid 
-               INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id 
-               WHERE appointment.status = 'appointment'";
+               LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id 
+               LEFT JOIN branches b ON patient.branch_id = b.id
+               WHERE appointment.status = 'appointment' AND appointment.docid = '$userid'";
 
-                    if (isset($_GET['search'])) {
-                        $count_query .= " AND (patient.pname LIKE '%$search%' OR doctor.docname LIKE '%$search%' OR procedures.procedure_name LIKE '%$search%')";
+                    if (!empty($search)) {
+                        $s2 = $database->real_escape_string($search);
+                        $count_query .= " AND (patient.pname LIKE '%$s2%' OR procedures.procedure_name LIKE '%$s2%')";
                     }
 
                     $count_result = $database->query($count_query);
@@ -399,6 +411,7 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                                     <tr>
                                         <th>Profile</th>
                                         <th>Patient Name</th>
+                                        <th>Branch</th>
                                         <th>Procedure</th>
                                         <th>Date</th>
                                         <th>Time</th>
@@ -410,10 +423,12 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                                         <tr id="row-<?php echo $row['appoid']; ?>">
                                             <td>
                                                 <?php
-                                                if (!empty($row['profile_pic'])) {
-                                                    $photo = "../" . $row['profile_pic'];
+                                                $profilePicRaw = isset($row['profile_pic']) ? trim($row['profile_pic']) : '';
+                                                if ($profilePicRaw === '' || $profilePicRaw === 'default.jpg' || $profilePicRaw === 'default.png') {
+                                                    $photo = "../Media/Icon/Blue/profile.png";
                                                 } else {
-                                                    $photo = "../Media/Icon/Blue/care.png";
+                                                    $cleanPath = ltrim($profilePicRaw, '/');
+                                                    $photo = "../" . $cleanPath;
                                                 }
                                                 ?>
                                                 <img src="<?php echo $photo; ?>" alt="<?php echo $row['pname']; ?>"
@@ -423,7 +438,10 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                                                 <div class="cell-text"><?php echo $row['pname']; ?></div>
                                             </td>
                                             <td>
-                                                <div class="cell-text"><?php echo $row['procedure_name']; ?></div>
+                                                <div class="cell-text"><?php echo isset($row['branch_name']) ? htmlspecialchars($row['branch_name']) : '-'; ?></div>
+                                            </td>
+                                            <td>
+                                                <div class="cell-text"><?php echo !empty($row['procedure_name']) ? htmlspecialchars($row['procedure_name']) : 'For Clinic Assessment'; ?></div>
                                             </td>
                                             <td>
                                                 <div class="cell-text"><?php echo $row['appodate']; ?></div>
@@ -433,10 +451,6 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                                             </td>
                                             <td>
                                                 <div class="action-buttons">
-    <a href="complete_appointment.php?id=<?php echo $row['appoid']; ?>" 
-       class="btn-complete"
-       onclick="return confirm('Mark this session as completed?');">Complete</a>
-
     <a href="#" onclick="showCancelModal(<?php echo $row['appoid']; ?>, '<?php echo $row['pname']; ?>')" class="action-btn remove-btn">Cancel</a>
 </div>
                                             </td>
@@ -588,33 +602,45 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                             <?php
                             $upcomingAppointments = $database->query("
                                 SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time,
-                                    patient.pname as patient_name
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
+                                    a.appoid,
+                                    p.pname AS patient_name,
+                                    b.name AS branch_name,
+                                    a.appodate,
+                                    a.appointment_time,
+                                    COALESCE(
+                                        CONCAT_WS(', ',
+                                            NULLIF(pr.procedure_name, ''),
+                                            NULLIF(GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '), '')
+                                        ),
+                                        pr.procedure_name
+                                    ) AS procedures
+                                FROM appointment a
+                                INNER JOIN patient p ON a.pid = p.pid
+                                LEFT JOIN branches b ON b.id = a.branch_id
+                                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
                                 WHERE
-                                    appointment.docid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
+                                    a.docid = '$userid'
+                                    AND a.status IN ('appointment', 'booking')
+                                    AND a.appodate >= '$today'
+                                GROUP BY a.appoid, p.pname, b.name, a.appodate, a.appointment_time, pr.procedure_name
+                                ORDER BY a.appodate ASC, a.appointment_time ASC
                                 LIMIT 3;
                             ");
 
                             if ($upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedures'] ?? '');
+                                    $patient = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $dateLine = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    $suffix = $branch ? (' - ' . $branch) : '';
+                                    echo '<div class="appointment-item">'
+                                        . '<h4 class="appointment-type">' . ($proc !== '' ? $proc : 'Appointment') . '</h4>'
+                                        . '<p class="appointment-date">With ' . $patient . '</p>'
+                                        . '<p class="appointment-date">' . $dateLine . $suffix . '</p>'
+                                    . '</div>';
                                 }
                             } else {
                                 echo '<div class="no-appointments">
@@ -728,6 +754,34 @@ $schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='
                 btn.textContent = 'Confirm';
             });
         });
+    </script>
+    <script>
+    // Mobile sidebar toggle with overlay and accessibility
+    document.addEventListener('DOMContentLoaded', function() {
+        var toggleBtn = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('adminSidebar');
+        var overlay = document.getElementById('sidebarOverlay');
+
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if (toggleBtn && sidebar && overlay) {
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+        }
+    });
     </script>
 </body>
 </html>

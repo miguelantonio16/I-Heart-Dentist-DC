@@ -17,11 +17,26 @@ if (isset($_GET['dentist_id']) && isset($_GET['date'])) {
     $date = $_GET['date'];
 
     // Query to get booked times for the selected dentist and date
+    // Only consider active/holding statuses so completed appointments don't block the slot
     $booked_times_query = "
         SELECT appointment_time FROM appointment 
         WHERE docid = '$dentist_id' 
         AND appodate = '$date'
+        AND status IN ('pending_reservation','booking','appointment')
     ";
+
+    // Respect optional branch filter if provided via GET
+    if (isset($_GET['branch_id']) && $_GET['branch_id'] !== '') {
+        $branch_id = $con->real_escape_string($_GET['branch_id']);
+        $booked_times_query = "
+            SELECT appointment_time FROM appointment 
+            WHERE docid = '$dentist_id' 
+            AND appodate = '$date'
+            AND branch_id = '$branch_id'
+            AND status IN ('pending_reservation','booking','appointment')
+        ";
+    }
+
     $result = mysqli_query($con, $booked_times_query);
 
     $booked_times = [];

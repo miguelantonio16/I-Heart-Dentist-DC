@@ -5,15 +5,17 @@
     font-family: 'Montserrat', sans-serif;
     width: 100%; /* Full width within container */
     max-width: 100%; /* Ensure it spans the container */
-    overflow: hidden; /* Prevent internal elements from protruding */
-    margin-bottom: 10px;;
-    height: 77%;
+    overflow: visible; /* Allow calendar to expand vertically */
+    margin-bottom: 10px;
+    height: auto; /* Let FullCalendar determine required height */
 }
 
 .calendar-wrapper {
-    width: 100%; /* Ensure wrapper takes full width */
-    max-width: 1200px; /* Cap width for large screens */
-    margin: 0 auto; /* Center within main-section */
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow-x: auto; /* allow horizontal scroll on very small devices */
+    -webkit-overflow-scrolling: touch;
 }
 
 .container {
@@ -73,10 +75,11 @@
 /* Dates */
 .fc-day {
     background: #ffffff;
-    border-radius: 0; /* Remove individual cell border radius */
+    border-radius: 0;
     transition: background 0.2s ease;
-    height: 60px; /* Reduced cell height */
-    line-height: 60px; /* Center text vertically */
+    min-height: 60px; /* allow flexible height while keeping a minimum */
+    line-height: normal; /* allow multi-line dates/events */
+    min-width: 48px; /* prevent extreme shrinking */
 }
 .fc-day.fc-widget-content {
     border: 1px solid #6491bb !important; /* Light gray border for days */
@@ -125,6 +128,21 @@
     justify-content: center;
     padding: 0;
     line-height: normal;
+    flex: 1 1 120px;
+}
+
+/* Override for Add No Service Day button: centered within side panel */
+#addNonWorkingDay {
+    flex: 0 0 auto;
+    width: 220px;
+    height: 44px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin: 8px auto 4px; /* True horizontal centering */
+    display: block;
 }
 
 .bookings { background-color: #f5c447; }
@@ -188,8 +206,12 @@
 .color-legend {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-left: 50px;
+    gap: 12px;
+    margin-left: 0;      /* Remove offset so centering is symmetric */
+    padding: 0 18px;     /* Balanced horizontal padding */
+    width: 100%;
+    box-sizing: border-box;
+    align-items: flex-start; /* Keep legend items left-aligned */
 }
 
 .color-item {
@@ -207,4 +229,21 @@
 .color-label {
     font-size: 15px;
     color: #333;
+}
+
+/* Responsive breakpoints */
+@media (max-width: 768px) {
+    #calendar { height: auto; }
+    .fc-toolbar { font-size: 12px; }
+    .fc th.fc-day-header { font-size: 11px; }
+    .fc-event { font-size: 8px !important; }
+    .legend-item { width: 110px; height: 36px; }
+}
+
+@media (max-width: 576px) {
+    .calendar-wrapper { padding: 0 6px; }
+    .legend { gap: 6px; }
+    .legend-item { flex: 1 1 45%; width: auto; }
+    .fc-day { height: 50px; line-height: 50px; }
+    .fc-button { font-size: 9px; padding: 2px 5px; }
 }

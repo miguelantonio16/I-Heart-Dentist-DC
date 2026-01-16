@@ -93,7 +93,10 @@ $.ajax({
 	var calendar = $('#calendar').fullCalendar({
 	    defaultView: 'month',
 		 timeZone: 'local',
-	    editable: true,
+	    editable: false, // disable drag & resize
+        eventStartEditable: false,
+        eventDurationEditable: false,
+        droppable: false,
         selectable: true,
 		selectHelper: true,
         select: function(start, end) {

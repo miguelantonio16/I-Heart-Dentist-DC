@@ -127,15 +127,28 @@
 
                 // Insert user data into the database
             // Include branch_id if provided
-            if ($branch_id !== null) {
-              $query = "INSERT INTO patient (pemail, pname, ppassword, paddress, pdob, ptel, verification_token, branch_id)
-                VALUES ('$email', '$name', '$hashed_password', '$address', '$dob', '$tele', '$verification_token', $branch_id)";
-            } else {
-              $query = "INSERT INTO patient (pemail, pname, ppassword, paddress, pdob, ptel, verification_token)
-                VALUES ('$email', '$name', '$hashed_password', '$address', '$dob', '$tele', '$verification_token')";
-            }
-                $database->query($query);
-                $database->query("INSERT INTO webuser VALUES ('$email', 'p')");
+                        if ($branch_id !== null) {
+                            $query = "INSERT INTO patient (pemail, pname, ppassword, paddress, pdob, ptel, verification_token, is_verified, branch_id)
+                                VALUES ('$email', '$name', '$hashed_password', '$address', '$dob', '$tele', '$verification_token', 0, $branch_id)";
+                        } else {
+                            $query = "INSERT INTO patient (pemail, pname, ppassword, paddress, pdob, ptel, verification_token, is_verified)
+                                VALUES ('$email', '$name', '$hashed_password', '$address', '$dob', '$tele', '$verification_token', 0)";
+                        }
+                // Insert patient and capture ID for branch mapping
+                if ($database->query($query)) {
+                    $new_pid = $database->insert_id;
+                    // Ensure branch mapping row exists (migration moved to mapping table usage elsewhere)
+                    if ($branch_id !== null) {
+                        $database->query("INSERT IGNORE INTO patient_branches (pid, branch_id) VALUES ('".$database->real_escape_string($new_pid)."', '".$database->real_escape_string($branch_id)."')");
+                    }
+                } else {
+                    $error = "Failed to create patient account: " . $database->error;
+                }
+
+                // Create webuser row only if patient insert succeeded
+                if (empty($error)) {
+                    $database->query("INSERT INTO webuser VALUES ('$email', 'p')");
+                }
 
 
                 // Send verification email
@@ -160,7 +173,9 @@
                     // Content
                     $mail->isHTML(true);
                     $mail->Subject = 'Email Verification';
-                    $verification_link = "http://localhost/IHeartDentistDC/patient/verify-email.php?token=$verification_token"; // Replace with your domain
+                    // Build verification link using configurable BASE_URL (falls back if undefined)
+                    $baseUrl = defined('BASE_URL') ? rtrim(BASE_URL,'/') : 'http://iheartdentistdc.com';
+                    $verification_link = $baseUrl . "/patient/verify-email.php?token=" . urlencode($verification_token);
                     $mail->Body = "Hi $name,<br><br>Please verify your email by clicking the link below:<br><br>
                                 <a href='$verification_link'>Verify Email</a><br><br>Thank you!";
 
@@ -174,12 +189,13 @@
 
                 // Redirect to a success page or display a message
                 if (empty($error)) {
-                    $_SESSION["user"] = $email;
-                    $_SESSION["usertype"] = "p";
-                    $_SESSION["username"] = $fname;
-
-
-                    header('Location: verification-sent.php'); // Create this page to inform the user
+                    // Do NOT auto-login before email verification to prevent confusion / accidental access.
+                    // Optionally store branch in a transient session if you plan to use it after verification resend flows.
+                    $_SESSION['pending_verification_email'] = $email;
+                    if ($branch_id !== null) {
+                        $_SESSION['pending_branch_id'] = intval($branch_id);
+                    }
+                    header('Location: verification-sent.php');
                     exit();
                 }
             }
@@ -223,6 +239,23 @@
                 const sidebar = document.querySelector('.sidebar')
                 sidebar.style.display = 'none'
             }
+        </script>
+        <script>
+            // Adjust top spacing so fixed header does not overlap the create-account card
+            // Use a small visible gap (8px) under the header while reserving header height on body
+            function adjustTopSpacing() {
+                const nav = document.querySelector('nav');
+                if (!nav) return;
+                const headerHeight = nav.offsetHeight || 64;
+                // Reserve exact header height to prevent overlap
+                document.body.style.paddingTop = headerHeight + 'px';
+                // Keep the card close to the header with a small comfortable gap
+                document.querySelectorAll('.create-container, .signup-container').forEach(el => {
+                    el.style.marginTop = '8px';
+                });
+            }
+            window.addEventListener('DOMContentLoaded', adjustTopSpacing);
+            window.addEventListener('resize', adjustTopSpacing);
         </script>
     <div class="create-container">
         <div class="container">
@@ -728,9 +761,9 @@
                                     and accurate.
                                 </label>
                             </div>
-                            <div class="terms-container">
+                            <!-- <div class="terms-container">
                                 <p class="terms-text">By creating an account, you agree to our <a href="terms-and-conditions.php" class="terms-link">Terms and Conditions</a>.</p>
-                            </div>
+                            </div> -->
                         </td>
                     </tr>
                     <tr>

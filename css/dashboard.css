@@ -139,7 +139,7 @@ body {
 /* Media query for mobile view */
 @media screen and (max-width: 1024px) {
     .sidebar {
-        width: 80px;
+        width: 72px;
         padding: 10px 0;
     }
     
@@ -184,9 +184,16 @@ body {
     }
     
     .nav-item {
-        padding: 15px;
         justify-content: center;
+        padding: 12px 0;
+        margin: 6px 6px;
+        border-radius: 12px;
+        color: #5f8fb8;
+        transition: background-color 0.3s, color 0.3s;
     }
+    .nav-item:hover { background-color: #f2f7ff; color: #6491bb; }
+    .nav-item.active { font-weight: 600; border-left-color: #5f8fb8; }
+    .nav-icon { width: 26px; height: 26px; margin-right: 0; }
     
     .nav-icon {
         margin-right: 0;
@@ -199,8 +206,9 @@ body {
     
     /* Adjust the content area margin */
     .content-area {
-        margin-left: 80px;
-        width: calc(100% - 80px);
+        margin-left: 72px;
+        width: calc(100% - 72px);
+        padding: 12px;
     }
 }
 /*******************************MAIN CONTENT******************************/
@@ -225,13 +233,13 @@ body {
 
 /* Right sidebar should be fixed but smaller so it doesn't force horizontal scroll */
 .right-sidebar {
-    width: 300px;
-    flex: 0 0 300px;
+    width: 280px;
+    flex: 0 0 280px;
 }
 
 .search-container {
     background-color: white;
-    border: 1px solid #303030;
+    border: 1px solid #e0e0e0;
     min-height: 40px;
     border-radius: 8px;
     padding: 0;
@@ -335,6 +343,49 @@ input[type="search"]::-webkit-search-cancel-button {
     background-image: url('../Media/Icon/White/down.png');
 }
 
+/* Filter icons for All / Active / Inactive */
+.filter-all-btn::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    width: 14px;
+    height: 14px;
+    background-image: url('../Media/Icon/Blue/filter.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+.filter-all-btn.active::before {
+    background-image: url('../Media/Icon/White/filter.png');
+}
+
+.filter-active-btn::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    width: 14px;
+    height: 14px;
+    background-image: url('../Media/Icon/Blue/check.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+.filter-active-btn.active::before {
+    background-image: url('../Media/Icon/White/check.png');
+}
+
+.filter-inactive-btn::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    width: 14px;
+    height: 14px;
+    background-image: url('../Media/Icon/Blue/hide.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+.filter-inactive-btn.active::before {
+    background-image: url('../Media/Icon/White/hide.png');
+}
+
 .filter-btn.active {
     background-color: #84b6e4;
     color: white;
@@ -350,6 +401,39 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 .filter-btn.inactive:hover{
     background-color: rgb(244, 242, 242);
+}
+
+/* Branch select styled like filter pills */
+.announcement-filters .filter-branch-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    border-radius: 20px;
+    padding: 6px 34px 6px 12px;
+    border: 1px solid #d0d7de;
+    background-color: #ffffff;
+    color: #2b6ea3;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    height: 34px;
+    box-shadow: none;
+    margin: 2px;
+}
+.announcement-filters .filter-branch-select:hover {
+    background-color: #fbfdff;
+}
+.announcement-filters .filter-branch-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(132,182,228,0.12);
+}
+
+/* Add a caret icon on the right of the select (fallback to simple triangle if image missing) */
+.announcement-filters .filter-branch-select {
+    background-image: linear-gradient(45deg, transparent 50%, #b0cbe0 50%), linear-gradient(135deg, #b0cbe0 50%, transparent 50%);
+    background-position: calc(100% - 12px) calc(50% - 4px), calc(100% - 6px) calc(50% - 4px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
 }
 
 
@@ -691,22 +775,19 @@ input[type="search"]::-webkit-search-cancel-button {
 /*******************************RIGHT SIDEBAR*************************************/
 /* Right sidebar styles - updated to match design */
 .right-sidebar {
-    width: 420px;
+    width: 360px; /* narrower panel */
     background-color: white;
     border-radius: 10px;
-    padding: 20px;
+    padding: 16px; /* slightly tighter padding */
     display: flex;
     flex-direction: column;
-    /* Keep the sidebar visible while the main content scrolls on larger screens */
     position: sticky !important;
-    top: 20px;
+    top: 16px; /* reduce top offset */
     align-self: flex-start;
-    /* Extra top padding to avoid visual clipping */
-    padding-top: 28px;
-    /* Make sidebar fit viewport and allow internal scrolling when content is long */
-    height: calc(100vh - 40px);
-    overflow: auto;
-    flex: 0 0 420px;
+    padding-top: 20px; /* reduce extra top padding */
+    height: calc(100vh - 32px); /* keep panel within viewport */
+    overflow: hidden; /* let inner sections manage their own scroll */
+    flex: 0 0 360px; /* match width */
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.104);
     z-index: 5;
 }
@@ -717,10 +798,10 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .stats-container {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    margin-bottom: 15px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px; /* tighter spacing */
+    margin-bottom: 12px;
 }
 
 .stat-box-link {
@@ -730,17 +811,36 @@ input[type="search"]::-webkit-search-cancel-button {
 .stat-box {
     background-color: #dae8f6;
     border-radius: 10px;
-    padding: 20px;
+    padding: 14px; /* smaller card */
     width: 100%;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     display: flex;
     justify-content: space-between;
     align-items: center;
     transition: background-color 0.3s;
+    min-height: 86px; /* reduced min height */
 }
 
 .stat-box:hover {
     background-color: #cedae5;
+}
+
+/* Wider screens: spread cards */
+@media (min-width: 700px) {
+    .stats-container { grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); }
+    .notification-container { grid-column: span 1; }
+}
+
+/* Small tablets: two columns */
+@media (max-width: 699px) {
+    .stats-container { grid-template-columns: 1fr 1fr; }
+    .notification-container { grid-column: 1 / -1; }
+}
+
+/* Phones: single column */
+@media (max-width: 480px) {
+    .stats-container { grid-template-columns: 1fr; }
+    .stat-box { padding: 16px; }
 }
 
 .stat-content {
@@ -751,7 +851,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .stat-number {
-    font-size: 35px;
+    font-size: 26px; /* slightly smaller number */
     font-weight: 700;
     color: #6491bb;
     margin: 0;
@@ -760,24 +860,20 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .stat-label {
     color: #333;
-    font-size: 14px;
-    margin: 5px 0 0;
+    font-size: 12px; /* smaller label */
+    margin: 4px 0 0;
     font-weight: 500;
 }
 
 .stat-icon {
-    width: 40px;
-    height: 40px;
+    width: 28px; /* smaller icon */
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.stat-icon img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
+.stat-icon img { width: 22px; height: 22px; object-fit: contain; }
 
 /* Calendar icon */
 .calendar-icon {
@@ -819,10 +915,10 @@ input[type="search"]::-webkit-search-cancel-button {
 
 /* Calendar section */
 .calendar-section {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     border-top: 1px solid #e0e0e0;
     border-bottom: 1px solid #e0e0e0;
-    padding: 20px 0;
+    padding: 12px 0; /* smaller calendar block */
 }
 
 .calendar-title {
@@ -843,7 +939,7 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .calendar-header {
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .calendar-month {
@@ -857,25 +953,25 @@ input[type="search"]::-webkit-search-cancel-button {
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 5px;
+    gap: 4px; /* tighter grid */
 }
 
 .calendar-day {
     text-align: center;
-    padding: 5px;
-    font-size: 12px;
+    padding: 4px;
+    font-size: 11px; /* smaller */
     color: #666;
     font-weight: 600;
 }
 
 .calendar-date {
-    padding: 8px 0;
+    padding: 6px 0;
     text-align: center;
     border-radius: 50%;
-    font-size: 12px;
+    font-size: 11px; /* smaller */
     color: #333;
-    width: 30px;
-    height: 30px;
+    width: 26px; /* smaller dots */
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -898,10 +994,11 @@ input[type="search"]::-webkit-search-cancel-button {
     border-radius: 5px;
     padding: 0;
     box-shadow: none;
-    flex-grow: 1;
+    flex: 1 1 0; /* take remaining space */
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    min-height: 160px;
+    overflow: hidden; /* contain inner scroll */
 }
 
 .upcoming-appointments h3 {
@@ -912,8 +1009,9 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .appointments-content {
-    overflow-y: auto;
-    flex-grow: 1;
+    overflow-y: auto; /* scroll appointments list when long */
+    flex: 1 1 auto;
+    min-height: 0; /* allow flex child to shrink and enable scrolling */
 }
 
 .appointment-item {
@@ -1065,5 +1163,9 @@ input[type="search"]::-webkit-search-cancel-button {
         max-height: none;
         overflow: visible;
         height: auto;
+        width: 100%;
+        flex: 1 1 auto;
     }
+    .content { flex-direction: column; gap: 16px; padding: 12px; }
+    .main-section { margin-right: 0; }
 }

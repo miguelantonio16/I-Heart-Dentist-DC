@@ -46,7 +46,7 @@ try {
         FROM appointment a
         JOIN doctor d ON a.docid = d.docid
         JOIN patient p ON a.pid = p.pid
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
+        LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
         WHERE a.appoid = ?
     ");
     $stmt->bind_param("i", $appoid);
@@ -58,7 +58,8 @@ try {
     }
 
     $appointment = $result->fetch_assoc();
-    $recordType = ($appointment['status'] === 'booking') ? 'booking' : 'appointment';
+    $recordType = ($appointment['status'] === 'booking' || $appointment['status'] === 'pending_reservation') ? 'booking' : 'appointment';
+    $procedureName = $appointment['procedure_name'] ?? 'Dental Appointment';
     $reason = "Cancelled by patient";
     $status = 'cancelled';
 
@@ -87,7 +88,7 @@ try {
 
     // Create notifications
     $notificationTitle = ucfirst($recordType) . " Cancelled";
-    $notificationMessage = "Your $recordType for {$appointment['procedure_name']} on " . 
+    $notificationMessage = "Your $recordType for {$procedureName} on " . 
                          date('M j, Y', strtotime($appointment['appodate'])) . " at " .
                          date('g:i A', strtotime($appointment['appointment_time'])) . 
                          " has been cancelled. Reason: $reason";
@@ -148,7 +149,7 @@ try {
             <p>Patient: {$appointment['pname']}</p>
             <p>Date: " . date('F j, Y', strtotime($appointment['appodate'])) . "</p>
             <p>Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "</p>
-            <p>Procedure: {$appointment['procedure_name']}</p>";
+            <p>Procedure: {$procedureName}</p>";
         $mail->send();
         
         // To patient
@@ -158,7 +159,7 @@ try {
         $mail->Body = "<h3>Your $recordType Has Been Cancelled</h3>
             <p>Date: " . date('F j, Y', strtotime($appointment['appodate'])) . "</p>
             <p>Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "</p>
-            <p>Procedure: {$appointment['procedure_name']}</p>";
+            <p>Procedure: {$procedureName}</p>";
         $mail->send();
         
         $emailSuccess = true;

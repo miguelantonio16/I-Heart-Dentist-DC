@@ -28,7 +28,7 @@ if(($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'GET
         SELECT a.*, p.pid, p.pname, p.pemail, pr.procedure_name 
         FROM appointment a
         JOIN patient p ON a.pid = p.pid
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
+        LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
         WHERE a.appoid = ? AND a.docid = ? AND a.status = 'appointment'
     ");
     
@@ -41,6 +41,9 @@ if(($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'GET
         echo json_encode(['status' => false, 'msg' => "Appointment not found or you don't have permission to cancel it"]);
         exit();
     }
+
+    // Fallback for missing procedure
+    $procedureText = !empty($appointment['procedure_name']) ? $appointment['procedure_name'] : 'For Clinic Assessment';
 
     // Archive the appointment first
     $archiveQuery = $database->prepare("
@@ -77,7 +80,7 @@ if(($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'GET
         if($deleteQuery->execute()) {
             // Create notification for patient
             $notificationTitle = "Appointment Cancelled";
-            $notificationMessage = "Your appointment for " . $appointment['procedure_name'] . " on " . 
+            $notificationMessage = "Your appointment for " . $procedureText . " on " . 
                                  date('M j, Y', strtotime($appointment['appodate'])) . " at " . 
                                  date('g:i A', strtotime($appointment['appointment_time'])) . 
                                  " has been cancelled by Dr. " . $dentistName . ". Reason: " . $reason;
@@ -124,7 +127,7 @@ if(($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'GET
                     <p><strong>Dentist:</strong> Dr. {$dentistName}</p>
                     <p><strong>Date:</strong> " . date('F j, Y', strtotime($appointment['appodate'])) . "</p>
                     <p><strong>Time:</strong> {$appointment['appointment_time']}</p>
-                    <p><strong>Procedure:</strong> {$appointment['procedure_name']}</p>
+                    <p><strong>Procedure:</strong> {$procedureText}</p>
                     
                     <h4>Cancellation Details:</h4>
                     <p><strong>Reason:</strong> {$reason}</p>
@@ -134,18 +137,18 @@ if(($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'GET
                 ";
                 
                 $mail->send();
-                echo json_encode(['status' => true, 'msg' => "Appointment cancelled successfully. Notification sent."]);
+                echo json_encode(['status' => true, 'msg' => "Appointment cancelled successfully. Notification sent.", 'message' => "Appointment cancelled successfully. Notification sent."]);
             } catch (Exception $e) {
-                echo json_encode(['status' => true, 'msg' => "Appointment cancelled but failed to send notification email."]);
+                echo json_encode(['status' => true, 'msg' => "Appointment cancelled but failed to send notification email.", 'message' => "Appointment cancelled but failed to send notification email."]);
                 error_log("Mailer Error: " . $e->getMessage());
             }
         } else {
-            echo json_encode(['status' => false, 'msg' => "Failed to delete the appointment."]);
+            echo json_encode(['status' => false, 'msg' => "Failed to delete the appointment.", 'message' => "Failed to delete the appointment."]);
         }
     } else {
-        echo json_encode(['status' => false, 'msg' => "Failed to archive the appointment."]);
+        echo json_encode(['status' => false, 'msg' => "Failed to archive the appointment.", 'message' => "Failed to archive the appointment."]);
     }
 } else {
-    echo json_encode(['status' => false, 'msg' => "Invalid request."]);
+    echo json_encode(['status' => false, 'msg' => "Invalid request.", 'message' => "Invalid request."]);
 }
 ?>

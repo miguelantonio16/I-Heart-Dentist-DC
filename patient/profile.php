@@ -18,7 +18,24 @@ $userfetch = $userrow->fetch_assoc();
 $userid = $userfetch["pid"];
 $username = $userfetch["pname"];
 // Normalize branch name variable for easier use later
-$userBranchName = isset($userfetch['branch_name']) && $userfetch['branch_name'] !== null ? $userfetch['branch_name'] : '';
+// Build branch list (supports multi-branch assignments)
+$branchNames = [];
+$resBranches = $database->query("SELECT b.name FROM patient_branches pb JOIN branches b ON pb.branch_id = b.id WHERE pb.pid='" . $database->real_escape_string($userid) . "' ORDER BY b.name ASC");
+if ($resBranches && $resBranches->num_rows > 0) {
+    while ($br = $resBranches->fetch_assoc()) {
+        if (!empty($br['name'])) {
+            $clean = preg_replace('/\s*Branch$/i', '', $br['name']);
+            if (!in_array($clean, $branchNames)) {
+                $branchNames[] = $clean;
+            }
+        }
+    }
+}
+// Fallback to legacy single branch if mapping empty
+if (empty($branchNames) && !empty($userfetch['branch_name'])) {
+    $branchNames[] = preg_replace('/\s*Branch$/i', '', $userfetch['branch_name']);
+}
+$userBranchName = implode(', ', $branchNames);
 
 
 // Get notification count
@@ -38,8 +55,9 @@ $medicalHistory = $database->query("
     ORDER BY ic.consent_date DESC
 ");
 
-// Get dental records
-$dentalRecords = $database->query("SELECT * FROM dental_records WHERE patient_id = $userid ORDER BY upload_date DESC");
+// Get dental records (include dentist name)
+$userid_int = intval($userid);
+$dentalRecords = $database->query("SELECT dr.*, d.docname AS dentist_name FROM dental_records dr LEFT JOIN doctor d ON dr.dentist_id = d.docid WHERE dr.patient_id = $userid_int ORDER BY dr.upload_date DESC");
 
 // Get informed consents
 $consents = $database->query("SELECT * FROM informed_consent WHERE email = '$useremail' ORDER BY consent_date DESC");
@@ -121,6 +139,7 @@ $today = date('Y-m-d');
     <link rel="stylesheet" href="../css/main.css">
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/overrides.css">
     <title>Profile - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -154,7 +173,8 @@ $today = date('Y-m-d');
         .profile-header {
             display: flex;
             align-items: center;
-            background: url('../media/background/background-blue.png') no-repeat center center;
+            /* Correct case-sensitive path for Linux servers */
+            background: url('../Media/Background/background-blue.png') no-repeat center center;
             background-size: cover; 
             border-radius: 12px;
             padding: 25px;
@@ -390,6 +410,13 @@ $today = date('Y-m-d');
             margin-bottom: 8px;
         }
 
+        .record-dentist {
+            color: #2b4c7e;
+            font-weight: 600;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
         .record-notes {
             margin-bottom: 15px;
             color: #212529;
@@ -619,12 +646,15 @@ $today = date('Y-m-d');
             }
         }
     </style>
+    <link rel="stylesheet" href="../css/responsive-admin.css">
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-wrapper">
         <!-- Sidebar - Kept intact as requested -->
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -739,8 +769,7 @@ $today = date('Y-m-d');
                                         <div class="tab active" role="tab" tabindex="0" data-tab="about">About</div>
                                         <!-- Medical Record tab removed -->
                                         <div class="tab" role="tab" tabindex="0" data-tab="dental">Dental Record</div>
-                                        <div class="tab" role="tab" tabindex="0" data-tab="forms">Form</div>
-                                        <div class="tab" role="tab" tabindex="0" data-tab="consent">Consent Form</div>
+                                        <!-- Form and Consent Form tabs removed -->
                                     </div>
 
                                     <!-- Tab Content -->
@@ -805,6 +834,9 @@ $today = date('Y-m-d');
                                                                     </svg>
                                                                     <?php echo date('M d, Y', strtotime($record['upload_date'])); ?>
                                                                 </div>
+                                                                <div class="record-dentist">
+                                                                    <?php echo !empty($record['dentist_name']) ? 'By Dr. '.htmlspecialchars($record['dentist_name']) : ''; ?>
+                                                                </div>
                                                                 <div class="record-notes">
                                                                     <?php echo !empty($record['notes']) ? htmlspecialchars($record['notes']) : 'No notes provided'; ?>
                                                                 </div>
@@ -832,118 +864,7 @@ $today = date('Y-m-d');
                                             <?php endif; ?>
                                         </div>
 
-                                        <!-- Forms Tab -->
-                                        <div id="forms" class="tab-pane">
-                                            <?php if ($consents->num_rows > 0): ?>
-                                                <div class="content-card">
-                                                    <div class="card-header">
-                                                        <h3>Signed Forms</h3>
-                                                    </div>
-                                                    <table class="forms-table">
-                                                        <?php while ($consent = $consents->fetch_assoc()): ?>
-                                                            <tr>
-                                                                <td>
-                                                                    <strong>Consent Form</strong>
-                                                                    <div
-                                                                        style="font-size: 14px; color: #6c757d; margin-top: 3px;">
-                                                                        Signed on:
-                                                                        <?php echo date('M d, Y', strtotime($consent['consent_date'])); ?>
-                                                                    </div>
-                                                                </td>
-                                                                <td style="text-align: right;">
-                                                                    <span class="form-status status-signed">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12"
-                                                                            height="12" fill="currentColor" viewBox="0 0 16 16"
-                                                                            style="vertical-align: -1px; margin-right: 3px;">
-                                                                            <path
-                                                                                d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
-                                                                        </svg>
-                                                                        Signed
-                                                                    </span>
-                                                                </td>
-                                                            </tr>
-                                                        <?php endwhile; ?>
-                                                    </table>
-                                                </div>
-                                            <?php else: ?>
-                                                <div class="empty-state">
-                                                    <img src="../img/notfound.svg" alt="No Forms">
-                                                    <p>No consent forms signed yet.</p>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-
-                                        <!-- Consent Form Tab -->
-                                        <div id="consent" class="tab-pane">
-                                            <?php if ($hasConsent): ?>
-                                                <div class="content-card">
-                                                    <div class="card-header">
-                                                        <h3>Latest Consent Form</h3>
-                                                        <span style="font-size: 14px; color: #6c757d;">
-                                                            Signed on:
-                                                            <?php echo date('M d, Y', strtotime($consentData['consent_date'])); ?>
-                                                        </span>
-                                                    </div>
-                                                    <div class="info-grid">
-                                                        <div class="info-item">
-                                                            <label class="info-label">Dental Treatment</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_treatment_to_be_done'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Drugs/Medications</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_drugs_medications'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Treatment Changes</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_changes_treatment_plan'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Radiographs (X-rays)</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_radiograph'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Tooth Removal</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_removal_teeth'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Crowns/Bridges</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_crowns_bridges'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Endodontics</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_endodontics'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Periodontal Treatment</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_periodontal_disease'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Fillings</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_fillings'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                        <div class="info-item">
-                                                            <label class="info-label">Dentures</label>
-                                                            <span
-                                                                class="info-value"><?php echo htmlspecialchars($consentData['initial_dentures'] ?: 'Not specified'); ?></span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            <?php else: ?>
-                                                <div class="empty-state">
-                                                    <img src="../img/notfound.svg" alt="No Consent Form">
-                                                    <p>No consent form has been signed yet.</p>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
+                                        <!-- Form and Consent Form content removed -->
                                     </div>
                                 </div>
                             </td>
@@ -1075,32 +996,49 @@ $today = date('Y-m-d');
                         <div class="appointments-content">
                             <?php
                             $sql = "SELECT
-                                appointment.appoid,
-                                procedures.procedure_name,
-                                appointment.appodate,
-                                appointment.appointment_time,
-                                doctor.docname as doctor_name,
+                                a.appoid,
+                                COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                a.appodate,
+                                a.appointment_time,
+                                d.docname as doctor_name,
                                 b.name AS branch_name
-                            FROM appointment
-                            INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                            INNER JOIN doctor ON appointment.docid = doctor.docid
-                            LEFT JOIN branches b ON doctor.branch_id = b.id
+                            FROM appointment a
+                            LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                            LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                            LEFT JOIN doctor d ON a.docid = d.docid
+                            LEFT JOIN branches b ON d.branch_id = b.id
                             WHERE
-                                appointment.pid = '$userid'
-                                AND appointment.status = 'appointment'
-                                AND appointment.appodate >= '$today'
-                            ORDER BY appointment.appodate ASC
+                                a.pid = '$userid'
+                                AND a.status = 'appointment'
+                                AND a.appodate >= '$today'
+                            GROUP BY a.appoid
+                            ORDER BY a.appodate ASC, a.appointment_time ASC
                             LIMIT 3";
 
                             $upcomingAppointments = $database->query($sql);
 
                             if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                    // Build single line: Date • Time - Branch (if branch available)
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') { $datetime .= ' - ' . $branch; }
+
                                     echo '<div class="appointment-item">';
-                                    echo '<h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>';
-                                    echo '<p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>';
-                                    echo '<p class="appointment-date">' . htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) . '</p>';
-                                    echo '<p class="appointment-branch">' . htmlspecialchars($appointment['branch_name'] ?? '-') . '</p>';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
                                     echo '</div>';
                                 }
                             } else {
@@ -1300,6 +1238,34 @@ function markAllAsRead() {
     });
 }
     </script>
+<script>
+// Mobile sidebar toggle with overlay and accessibility
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('sidebarToggle');
+    var sidebar = document.getElementById('adminSidebar');
+    var overlay = document.getElementById('sidebarOverlay');
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (toggleBtn && sidebar && overlay) {
+        toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+        });
+        overlay.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+    }
+});
+</script>
 </body>
 
 </html>

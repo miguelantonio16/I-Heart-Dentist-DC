@@ -25,10 +25,9 @@ a {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    height: 120vh;
-    width: 100vw;
-    margin-top: -100px;
-    
+    min-height: 100vh;
+    width: 100%;
+    padding: 40px 0; /* stable top/bottom spacing */
 }
 /********* IHeartDentistDC Logo *********/
 .navbar {
@@ -55,9 +54,9 @@ a {
     border-width: 3px;
     border-radius: 15px;
     background-color: white;
-    height: 53%;
-    width: 25%;
-    padding-top: 1.5em;
+    width: 420px; /* fixed width for consistent layout */
+    max-width: 90%;
+    padding: 1.5em 1.75em 2.25em;
     font-size: 16px;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.215);
     animation: transitionIn-Y-over 0.5s;
@@ -70,12 +69,11 @@ a {
     font-size: 30px;
     margin-bottom: 30px;
 }
-.login-logo{
-    img{
-        width: 100px;
-        height: auto;
-        margin-top: -1em;
-    }
+.login-logo img{
+    width: 84px; /* consistent logo size */
+    height: auto;
+    display: block;
+    margin: 0 auto 0.35rem; /* small space below logo */
 }
 .login-header-admin {
     color: #303030;

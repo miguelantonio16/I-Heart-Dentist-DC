@@ -16,6 +16,7 @@ if ($_SESSION['usertype'] != 'a') {
 
 // Include connection file with error handling
 require_once __DIR__ . "/../connection.php";  // Use absolute path
+require_once __DIR__ . '/../inc/redirect_helper.php';
 
 // Verify connection was established
 if (!isset($database) || !($database instanceof mysqli)) {
@@ -36,13 +37,27 @@ if (!$test) {
 }
 
 // Get totals for right sidebar
-$doctorrow = $database->query("select * from doctor where status='active';");
-$patientrow = $database->query("select * from patient where status='active';");
-$appointmentrow = $database->query("select * from appointment where status='booking';");
-$schedulerow = $database->query("select * from appointment where status='appointment';");
+// Apply branch scoping for counts if admin is restricted to a branch
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+if ($restrictedBranchId > 0) {
+    $doctorrow = $database->query("SELECT * FROM doctor WHERE status='active' AND (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $patientrow = $database->query("SELECT * FROM patient WHERE status='active' AND branch_id = $restrictedBranchId;");
+    $appointmentrow = $database->query("SELECT * FROM appointment WHERE status='booking' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $schedulerow = $database->query("SELECT * FROM appointment WHERE status='appointment' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+} else {
+    $doctorrow = $database->query("select * from doctor where status='active';");
+    $patientrow = $database->query("select * from patient where status='active';");
+    $appointmentrow = $database->query("select * from appointment where status='booking';");
+    $schedulerow = $database->query("select * from appointment where status='appointment';");
+}
 
 // Load branches for filter
-$branchesResult = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
+// Load branches for filter; when restricted, only show the allowed branch
+if ($restrictedBranchId > 0) {
+    $branchesResult = $database->query("SELECT id, name FROM branches WHERE id = $restrictedBranchId ORDER BY name ASC");
+} else {
+    $branchesResult = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
+}
 
 // Calendar variables
 $today = date('Y-m-d');
@@ -58,14 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     $action = $_GET["action"];
 
     // First get appointment details
-    $bookingQuery = $database->query("
-        SELECT a.*, p.pid, p.pname, p.pemail, pr.procedure_name, d.docname
-        FROM appointment a
-        JOIN patient p ON a.pid = p.pid
-        JOIN procedures pr ON a.procedure_id = pr.procedure_id
-        JOIN doctor d ON a.docid = d.docid
-        WHERE a.appoid = '$id'
-    ");
+        $bookingQuery = $database->query("
+            SELECT a.*, p.pid, p.pname, p.pemail, pr.procedure_name, d.docname
+            FROM appointment a
+            JOIN patient p ON a.pid = p.pid
+            LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+            JOIN doctor d ON a.docid = d.docid
+            WHERE a.appoid = '$id'
+        ");
     
     if ($bookingQuery && $bookingQuery->num_rows > 0) {
         $booking = $bookingQuery->fetch_assoc();
@@ -94,7 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             
             // Create notification for patient
             $notificationTitle = "Booking Accepted";
-            $notificationMessage = "Your booking for " . $booking['procedure_name'] . " on " . 
+            $procLabel = !empty($booking['procedure_name']) ? $booking['procedure_name'] : 'Procedure (to be evaluated)';
+            $notificationMessage = "Your booking for " . $procLabel . " on " . 
                                  date('M j, Y', strtotime($booking['appodate'])) . " at " . 
                                  date('g:i A', strtotime($booking['appointment_time'])) . 
                                  " has been accepted by the clinic.";
@@ -111,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             );
             $notificationQuery->execute();
             
-            header("Location: booking.php");
+            redirect_with_context('booking.php');
             exit();
             
         } elseif ($action == 'reject') {
@@ -165,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             );
             $notificationQuery->execute();
         
-            header("Location: booking.php");
+            redirect_with_context('booking.php');
             exit();
         }
     }
@@ -183,6 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Booking - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -316,6 +333,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 </head>
 
 <body>
+    <!-- Mobile hamburger for sidebar toggle -->
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <!-- sidebar toggle removed to keep sidebar static -->
     <?php
     // Pagination
     $results_per_page = 10;
@@ -335,13 +356,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     $sort_param = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
     $sort_order = ($sort_param === 'oldest') ? 'DESC' : 'ASC';
 
-    // Branch filter from GET
+    // Branch filter from GET, but enforce restriction if present
     $selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : 0;
+    if ($restrictedBranchId > 0) {
+        $selected_branch = $restrictedBranchId;
+    }
 
     // Base query
     $sqlmain = "SELECT 
             appointment.appoid, 
-            procedures.procedure_name, 
             patient.pname, 
             patient.pemail,
             patient.profile_pic,
@@ -351,7 +374,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             b.name AS branch_name
         FROM appointment
         INNER JOIN patient ON appointment.pid = patient.pid
-        INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
         INNER JOIN doctor ON appointment.docid = doctor.docid
         LEFT JOIN branches b ON doctor.branch_id = b.id
         WHERE appointment.status = 'booking'";
@@ -367,13 +389,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 
     // Branch filter via GET
     if ($selected_branch > 0) {
-        $sqlmain .= " AND doctor.branch_id = $selected_branch";
+        $sqlmain .= " AND (doctor.branch_id = $selected_branch OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$selected_branch))";
     }
 
     // Add search if exists
     if (isset($_GET['search']) && $_GET['search'] != "") {
         $search = $_GET['search'];
-        $sqlmain .= " AND (patient.pname LIKE '%$search%' OR procedures.procedure_name LIKE '%$search%' OR doctor.docname LIKE '%$search%')";
+        $sqlmain .= " AND (patient.pname LIKE '%$search%' OR doctor.docname LIKE '%$search%')";
     }
 
     // Add sorting
@@ -384,7 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 
     $result = $database->query($sql_pagination);
     // Count total records (adjust selected fields string to include branch_name)
-    $count_replace = "appointment.appoid, procedures.procedure_name, patient.pname, patient.pemail, patient.profile_pic, appointment.appodate, appointment.appointment_time, doctor.docname as dentist_name, b.name AS branch_name";
+    $count_replace = "appointment.appoid, patient.pname, patient.pemail, patient.profile_pic, appointment.appodate, appointment.appointment_time, doctor.docname as dentist_name, b.name AS branch_name";
     $count_result = $database->query(str_replace($count_replace, "COUNT(*) as total", $sqlmain));
 
     if (!$count_result) {
@@ -396,7 +418,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
     $total_pages = ceil($total_records / $results_per_page);
     ?>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -407,7 +429,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                Secretary
+                    <?php
+                        $roleLabel = 'Secretary';
+                        if (isset($_SESSION['user'])) {
+                            $curr = strtolower($_SESSION['user']);
+                            if ($curr === 'admin@edoc.com') {
+                                $roleLabel = 'Super Admin';
+                            } elseif (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                                $branchLabels = [
+                                    'adminbacoor@edoc.com' => 'Bacoor',
+                                    'adminmakati@edoc.com' => 'Makati'
+                                ];
+                                if (isset($branchLabels[$curr])) {
+                                    $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                                }
+                            }
+                        }
+                        echo $roleLabel;
+                    ?>
                 </p>
             </div>
 
@@ -448,10 +487,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     <img src="../Media/Icon/Blue/folder.png" alt="Reports" class="nav-icon">
                     <span class="nav-label">Reports</span>
                 </a>
+                <?php if (empty($_SESSION['restricted_branch_id'])): ?>
                 <a href="settings.php" class="nav-item">
                     <img src="../Media/Icon/Blue/settings.png" alt="Settings" class="nav-icon">
                     <span class="nav-label">Settings</span>
                 </a>
+                <?php endif; ?>
             </div>
 
             <div class="log-out">
@@ -464,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
 
         <div class="content-area">
             <div class="content">
-                <?php include('inc/sidebar-toggle.php'); ?>
+                <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 <div class="main-section">
                     <!-- search bar -->
                     <div class="search-container">
@@ -537,13 +578,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                     </div>
 
                     <?php if ($result->num_rows > 0): ?>
-                        <div class="table-container">
+                        <div class="table-responsive"><div class="table-container">
                             <table class="table">
                                 <thead>
                                     <tr>
                                         <th>Profile</th>
                                         <th>Patient Name</th>
-                                        <th>Procedure</th>
                                         <th>Dentist</th>
                                         <th>Branch</th>
                                         <th>Date & Time</th>
@@ -566,9 +606,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                                                 <div class="cell-text"><?php echo $row['pname']; ?></div>
                                             </td>
                                             <td>
-                                                <div class="cell-text"><?php echo $row['procedure_name']; ?></div>
-                                            </td>
-                                            <td>
                                                 <div class="cell-text"><?php echo $row['dentist_name']; ?></div>
                                             </td>
                                             <td>
@@ -581,13 +618,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                                                 <div class="action-buttons">
                                                     <a href="#" onclick="updateBooking(<?php echo $row['appoid']; ?>, 'accept')" class="action-btn done-btn">Accept</a>
                                                     <a href="#" onclick="updateBooking(<?php echo $row['appoid']; ?>, 'reject')" class="action-btn remove-btn">Reject</a>
+                                                    <a href="../patient/receipt.php?appoid=<?php echo $row['appoid']; ?>" target="_blank" class="action-btn view-btn">View Receipt</a>
                                                 </div>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>
-                        </div>
+                        </div></div>
 
                         <!-- Pagination -->
                         <div class="pagination">
@@ -737,42 +775,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
+                            $branchScope = '';
+                            if (isset($restrictedBranchId) && $restrictedBranchId > 0) {
+                                $branchScope = " AND (doctor.branch_id = $restrictedBranchId OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+                            }
+                            $upcomingAppointments = $database->query("SELECT
                                     appointment.appoid,
                                     procedures.procedure_name,
                                     appointment.appodate,
                                     appointment.appointment_time,
                                     patient.pname as patient_name,
-                                    doctor.docname as doctor_name
+                                    doctor.docname as doctor_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN patient ON appointment.pid = patient.pid
+                                LEFT JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
+                                    AND appointment.appodate >= '$today'" . $branchScope . "
+                                ORDER BY appointment.appodate ASC, appointment.appointment_time ASC
                             ");
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $pname = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $proc = htmlspecialchars($appointment['procedure_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+
+                                    echo '<div class="appointment-item">' .
+                                        '<h4 class="appointment-type">' . $pname . '</h4>' .
+                                        '<p class="appointment-dentist">With Dr. ' . $dname . '</p>' .
+                                        '<p class="appointment-date">' . $proc . '</p>' .
+                                        '<p class="appointment-date">' . $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str . (($branch!=='') ? (' - ' . $branch) : '') . '</p>' .
+                                    '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                </div>';
+                                echo '<div class="no-appointments"><p>No upcoming appointments scheduled</p></div>';
                             }
                             ?>
                         </div>
@@ -830,6 +879,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && isset($_GE
             currentAppoid = null;
             currentAction = null;
         }
+    </script>
+    <script>
+        // Mobile sidebar toggle for Booking page
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburger = document.getElementById('hamburgerAdmin');
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (hamburger && sidebar && overlay) {
+                const closeSidebar = () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('visible');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                };
+
+                const openSidebar = () => {
+                    sidebar.classList.add('open');
+                    overlay.classList.add('visible');
+                    hamburger.setAttribute('aria-expanded', 'true');
+                };
+
+                hamburger.addEventListener('click', function () {
+                    if (sidebar.classList.contains('open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+
+                overlay.addEventListener('click', function () {
+                    closeSidebar();
+                });
+
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeSidebar();
+                });
+            }
+        });
     </script>
 </body>
 

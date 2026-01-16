@@ -1,6 +1,7 @@
 <?php
 session_start();
 include("../connection.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['pid'])) {
     $pid = $_POST['pid'];
@@ -36,26 +37,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['pid'])) {
                     if (isset($_SESSION['user']) && $_SESSION['usertype'] == 'p') {
                         $_SESSION['profile_pic'] = $image_path;
                     }
-                    header("Location: profile.php");
-                    exit();
+                    redirect_with_context('profile.php');
                 } else {
-                    header("Location: profile.php?error=upload");
-                    exit();
+                    redirect_with_context('profile.php', ['error' => 'upload']);
                 }
             } else {
-                header("Location: profile.php?error=upload");
-                exit();
+                redirect_with_context('profile.php', ['error' => 'upload']);
             }
         } else {
-            header("Location: profile.php?error=type");
-            exit();
+            redirect_with_context('profile.php', ['error' => 'type']);
         }
     } else {
-        header("Location: profile.php?error=upload");
-        exit();
+        redirect_with_context('profile.php', ['error' => 'upload']);
     }
 } else {
-    header("Location: profile.php");
+    redirect_with_context('profile.php');
     exit();
 }
 ?>

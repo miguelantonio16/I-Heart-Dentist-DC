@@ -80,8 +80,8 @@ def send_email_to_patients(patients):
             """            
             message = MIMEText(body, "html")
             message['to'] = patient_email
-            message['from'] = 'songcodent@gmail.com'  
-            message['subject'] = 'Songco Dental Clinic - Appointment Reminder'
+            message['from'] = 'grycenmagahis@gmail.com'  
+            message['subject'] = 'I Heart Dentist Dental Clinic - Appointment Reminder'
 
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 

@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="../../css/animations.css">
     <link rel="stylesheet" href="../../css/main.css">
     <link rel="stylesheet" href="../../css/dashboard.css">
+    <link rel="stylesheet" href="../../css/responsive-admin.css">
 
     <title>Calendar - IHeartDentistDC</title>
     <link rel="icon" href="../../Media/Icon/logo.png" type="image/png">
@@ -61,6 +62,15 @@
             text-align: center;
             margin: 0 auto;
         }
+        /* Align appointment details to the left */
+        .modal-content .modal-body {
+            text-align: left;
+        }
+        /* Center the Close button in the footer */
+        .modal-content .modal-footer {
+            display: flex;
+            justify-content: center;
+        }
 
         .modal-buttons {
             margin-top: 20px;
@@ -85,12 +95,14 @@
             border-radius: 5px;
         }
         #calendar{
-            height: 83.9%;
+            height: auto;
         }
     </style>
 </head>
 
-<body>
+<body class="dentist-calendar">
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <?php
 
     //learn from w3schools.com
@@ -135,7 +147,7 @@
     
     ?>
     <div class="nav-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -167,6 +179,34 @@
                 <a href="calendar.php" class="nav-item active">
                     <img src="../../Media/Icon/Blue/calendar.png" alt="Calendar" class="nav-icon">
                     <span class="nav-label">Calendar</span>
+                    <script>
+                    // Mobile sidebar toggle with overlay and accessibility
+                    document.addEventListener('DOMContentLoaded', function() {
+                        var toggleBtn = document.getElementById('sidebarToggle');
+                        var sidebar = document.getElementById('adminSidebar');
+                        var overlay = document.getElementById('sidebarOverlay');
+
+                        function openSidebar() {
+                            sidebar.classList.add('open');
+                            overlay.classList.add('visible');
+                            toggleBtn.setAttribute('aria-expanded', 'true');
+                        }
+                        function closeSidebar() {
+                            sidebar.classList.remove('open');
+                            overlay.classList.remove('visible');
+                            toggleBtn.setAttribute('aria-expanded', 'false');
+                        }
+
+                        if (toggleBtn && sidebar && overlay) {
+                            toggleBtn.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+                            });
+                            overlay.addEventListener('click', closeSidebar);
+                            document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+                        }
+                    });
+                    </script>
                 </a>
                 <a href="../booking.php" class="nav-item">
                     <img src="../../Media/Icon/Blue/booking.png" alt="Booking" class="nav-icon">
@@ -469,34 +509,46 @@
                             <?php
                             $upcomingAppointments = $database->query("
                                 SELECT
-                                    appointment.appoid,
-                                    patient.pname AS patient_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time,
-                                    procedures.procedure_name
-                                FROM appointment
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                    a.appoid,
+                                    p.pname AS patient_name,
+                                    b.name AS branch_name,
+                                    a.appodate,
+                                    a.appointment_time,
+                                    COALESCE(
+                                        CONCAT_WS(', ',
+                                            NULLIF(pr.procedure_name, ''),
+                                            NULLIF(GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '), '')
+                                        ),
+                                        pr.procedure_name
+                                    ) AS procedures
+                                FROM appointment a
+                                INNER JOIN patient p ON a.pid = p.pid
+                                LEFT JOIN branches b ON b.id = a.branch_id
+                                LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
+                                LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
                                 WHERE
-                                    appointment.docid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
+                                    a.docid = '$userid'
+                                    AND a.status IN ('appointment', 'booking')
+                                    AND a.appodate >= '$today'
+                                GROUP BY a.appoid, p.pname, b.name, a.appodate, a.appointment_time, pr.procedure_name
+                                ORDER BY a.appodate ASC, a.appointment_time ASC
                                 LIMIT 3;
                             ");
 
 
                             if ($upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedures'] ?? '');
+                                    $patient = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $dateLine = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) . ' • ' . htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    $suffix = $branch ? (' - ' . $branch) : '';
+                                    echo '<div class="appointment-item">'
+                                        . '<h4 class="appointment-type">' . ($proc !== '' ? $proc : 'Appointment') . '</h4>'
+                                        . '<p class="appointment-date">With ' . $patient . '</p>'
+                                        . '<p class="appointment-date">' . $dateLine . $suffix . '</p>'
+                                    . '</div>';
                                 }
                             } else {
                                 echo '<div class="no-appointments">
@@ -534,31 +586,42 @@
 
                         var result = response.data;
                         $.each(result, function (i, item) {
-                            var eventColor = '#0E8923';  // green for appointments
-
-                            // Assign green color for "booking" status
-                            if (result[i].status === 'booking') {
-                                eventColor = '#F7BD01';  // yellow for booking requests
+                            var status = item.status || '';
+                            var type = item.type || '';
+                            // Default green for active appointments
+                            var eventColor = '#0E8923';
+                            if (type === 'non-working') {
+                                eventColor = '#F94144'; // No Service
+                            } else if (status === 'booking' || status === 'pending_reservation') {
+                                eventColor = '#F7BD01'; // Booking
+                            } else if (status === 'completed') {
+                                eventColor = '#BBBBBB'; // Completed
                             }
-
                             events.push({
-                                event_id: result[i].event_id,
-                                title: result[i].title,
-                                start: result[i].start,
-                                end: result[i].end,
+                                event_id: item.appointment_id || item.event_id || null,
+                                title: item.title,
+                                start: item.start,
+                                end: item.end,
                                 color: eventColor,
-                                url: result[i].url,
-                                procedure_name: result[i].procedure_name || 'N/A',
-                                patient_name: result[i].patient_name || 'N/A',
-                                dentist_name: result[i].dentist_name || 'N/A',
-                                status: result[i].status || 'N/A'
+                                url: item.url || null,
+                                procedure_name: item.procedure_name || 'N/A',
+                                patient_name: item.patient_name || 'N/A',
+                                dentist_name: item.dentist_name || 'N/A',
+                                status: status || 'N/A',
+                                type: type
                             });
-
-                        })
+                        });
+                        var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
                         var calendar = $('#calendar').fullCalendar({
                             defaultView: 'month',
                             timeZone: 'local',
-                            editable: true,
+                            height: 'auto',
+                            contentHeight: 'auto',
+                            aspectRatio: isMobile ? 1.05 : 1.6,
+                            // Disable drag & drop/resizing per request
+                            editable: false,
+                            eventStartEditable: false,
+                            eventDurationEditable: false,
                             selectable: true,
                             selectHelper: true,
                             select: function (start, end) {
@@ -576,8 +639,31 @@
                                     $('#modalPatientName').text(event.patient_name || 'N/A');
                                     $('#modalDentistName').text(event.dentist_name || 'N/A');
                                     $('#modalDate').text(event.start ? new Date(event.start).toLocaleDateString() : 'N/A');
-                                    $('#modalTime').text(event.start ? new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A');
-                                    $('#modalStatus').text(event.status === 'appointment' ? 'Appointment Confirmed' : 'Booking');
+                                    // Prefer precomputed time or moment formatting to avoid timezone issues
+                                    var displayTime = event.time ? event.time : (event.start ? moment(event.start).format('h:mm A') : null);
+                                    $('#modalTime').text(displayTime || 'N/A');
+                                    var statusText = '';
+                                    switch (event.status) {
+                                        case 'appointment':
+                                            statusText = 'Appointment Confirmed';
+                                            break;
+                                        case 'booking':
+                                        case 'pending_reservation':
+                                            statusText = 'Booking';
+                                            break;
+                                        case 'completed':
+                                            statusText = 'Completed';
+                                            break;
+                                        case 'cancelled':
+                                            statusText = 'Cancelled';
+                                            break;
+                                        case 'rejected':
+                                            statusText = 'Rejected';
+                                            break;
+                                        default:
+                                            statusText = (event.status || 'N/A');
+                                    }
+                                    $('#modalStatus').text(statusText);
 
                                     // Ensure the modal is properly called
                                     $('#appointmentModal').modal('show');
@@ -590,8 +676,13 @@
                             }
                         }); //end fullCalendar block	
                     },//end success block
-                    error: function (xhr, status) {
-                        alert(response.msg);
+                    error: function (xhr, status, error) {
+                        var msg = 'Failed to load events. ' + (error || status);
+                        if (xhr && xhr.responseText) {
+                            msg += '\nResponse: ' + xhr.responseText.substring(0,300);
+                        }
+                        alert(msg);
+                        console.error('Dentist calendar fetch error:', xhr.status, status, error, xhr.responseText);
                     }
                 });//end ajax block	
             }

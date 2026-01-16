@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-header("location: dentist.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
+redirect_with_context('dentist.php');
 exit;
 ?>

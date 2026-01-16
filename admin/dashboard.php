@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/loading.css">
     <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <title>Dashboard - IHeartDentistDC</title>
@@ -104,11 +105,21 @@ $userfetch = $userrow->fetch_assoc();
 $username = $userfetch["aemail"];
 
 
-// Get counts for dashboard
-$dentistrow = $database->query("SELECT COUNT(*) FROM doctor WHERE status='active'");
-$patientrow = $database->query("SELECT COUNT(*) FROM patient WHERE status='active'");
-$appointmentrow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='booking'");
-$schedulerow = $database->query("SELECT COUNT(*) FROM appointment WHERE status='appointment'");
+// Branch restriction (e.g., Bacoor-only admin)
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+
+// Get counts for dashboard, respecting branch restriction
+if ($restrictedBranchId > 0) {
+    $dentistrow = $database->query("SELECT COUNT(*) AS c FROM doctor WHERE status='active' AND (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))");
+    $patientrow = $database->query("SELECT COUNT(*) AS c FROM patient WHERE status='active' AND branch_id = $restrictedBranchId");
+    $appointmentrow = $database->query("SELECT COUNT(*) AS c FROM appointment WHERE status='booking' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))");
+    $schedulerow = $database->query("SELECT COUNT(*) AS c FROM appointment WHERE status='appointment' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))");
+} else {
+    $dentistrow = $database->query("SELECT COUNT(*) AS c FROM doctor WHERE status='active'");
+    $patientrow = $database->query("SELECT COUNT(*) AS c FROM patient WHERE status='active'");
+    $appointmentrow = $database->query("SELECT COUNT(*) AS c FROM appointment WHERE status='booking'");
+    $schedulerow = $database->query("SELECT COUNT(*) AS c FROM appointment WHERE status='appointment'");
+}
 
 
 $today = date('Y-m-d');
@@ -125,9 +136,13 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
 
 
 <body>
+    <!-- Mobile hamburger for sidebar toggle -->
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <!-- sidebar toggle removed to keep sidebar static -->
     <div class="main-container">
         <!-- sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -139,7 +154,26 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                    Secretary
+                    <?php
+                            $roleLabel = 'Secretary';
+                            if (isset($_SESSION['user'])) {
+                                $curr = strtolower($_SESSION['user']);
+                                // Super Admin label for the primary admin account
+                                if ($curr === 'admin@edoc.com') {
+                                    $roleLabel = 'Super Admin';
+                                } elseif (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                                    // Special label for branch-restricted admin accounts
+                                    $branchLabels = [
+                                        'adminbacoor@edoc.com' => 'Bacoor',
+                                        'adminmakati@edoc.com' => 'Makati'
+                                    ];
+                                    if (isset($branchLabels[$curr])) {
+                                        $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                                    }
+                                }
+                            }
+                            echo $roleLabel;
+                    ?>
                 </p>
             </div>
 
@@ -181,10 +215,13 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                     <img src="../Media/Icon/Blue/folder.png" alt="Reports" class="nav-icon">
                     <span class="nav-label">Reports</span>
                 </a>
+                <!-- Superadmin link removed -->
+                <?php if (empty($_SESSION['restricted_branch_id'])): ?>
                 <a href="settings.php" class="nav-item">
                     <img src="../Media/Icon/Blue/settings.png" alt="Settings" class="nav-icon">
                     <span class="nav-label">Settings</span>
                 </a>
+                <?php endif; ?>
             </div>
 
 
@@ -200,7 +237,7 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
         <div class="content-area">
             <!-- main content -->
             <div class="content">
-                <?php include('inc/sidebar-toggle.php'); ?>
+                <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 <div class="main-section">
                     <!-- search bar -->
                     <div class="search-container">
@@ -304,12 +341,36 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
 
                             // Base query with doctor photo included, alias primary keys to `pk` and docid to identify dentist posts
                             $query = "
-                                SELECT post_dentist.`" . $pd_pk . "` AS pk, post_dentist.docid AS docid, post_dentist.title, post_dentist.content, post_dentist.created_at, doctor.docname, doctor.photo
+                                SELECT post_dentist.`" . $pd_pk . "` AS pk, post_dentist.docid AS docid, post_dentist.title, post_dentist.content, post_dentist.created_at, doctor.docname, doctor.photo, NULL AS aemail
                                 FROM post_dentist
-                                LEFT JOIN doctor ON post_dentist.docid = doctor.docid
+                                LEFT JOIN doctor ON post_dentist.docid = doctor.docid";
+
+                            // Restrict dentist posts to branch if needed
+                            if ($restrictedBranchId > 0) {
+                                $query .= " WHERE (doctor.branch_id = $restrictedBranchId OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+                            }
+
+                            // Determine which admin posts should be visible to this viewer
+                            $postAdminWhere = '';
+                            $currentAdminEmail = isset($_SESSION['user']) ? strtolower($_SESSION['user']) : '';
+                            // If viewing as a restricted-branch admin, only show central admin posts and posts from the same branch admin
+                            if (!empty($restrictedBranchId)) {
+                                $allowed = ['admin@edoc.com'];
+                                if ($currentAdminEmail === 'adminbacoor@edoc.com') $allowed[] = 'adminbacoor@edoc.com';
+                                if ($currentAdminEmail === 'adminmakati@edoc.com') $allowed[] = 'adminmakati@edoc.com';
+                                // Build WHERE to include only allowed admin emails
+                                $escaped = array_map(function($e) use ($database){ return $database->real_escape_string($e); }, $allowed);
+                                $postAdminWhere = " WHERE aemail IN ('" . implode("','", $escaped) . "')";
+                            } else {
+                                // If not restricted and current admin is not superadmin, hide branch-only admin posts
+                                if (strcasecmp($currentAdminEmail, 'admin@edoc.com') !== 0) {
+                                    $postAdminWhere = " WHERE aemail NOT IN ('adminbacoor@edoc.com','adminmakati@edoc.com')";
+                                }
+                            }
+                            $query .= "
                                 UNION ALL
-                                SELECT post_admin.`" . $pa_pk . "` AS pk, NULL AS docid, post_admin.title, post_admin.content, post_admin.created_at, NULL AS docname, NULL AS photo
-                                FROM post_admin
+                                SELECT post_admin.`" . $pa_pk . "` AS pk, NULL AS docid, post_admin.title, post_admin.content, post_admin.created_at, NULL AS docname, NULL AS photo, post_admin.aemail AS aemail
+                                FROM post_admin" . $postAdminWhere . "
                             ";
 
 
@@ -337,7 +398,21 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                                 while ($post = $result->fetch_assoc()) {
                                     // Determine photo path
                                     $photoPath = $post['docname'] ? "../admin/uploads/" . $post['photo'] : "../Media/Icon/logo.png";
-                                    $posterName = $post['docname'] ? $post['docname'] : 'I Heart Dentist Dental Clinic';
+                                    // If this is an admin post, check author email to present branch-specific label
+                                    if (empty($post['docname'])) {
+                                        $authorEmail = isset($post['aemail']) ? $post['aemail'] : '';
+                                        $branchAdminLabels = [
+                                            'adminbacoor@edoc.com' => 'Bacoor',
+                                            'adminmakati@edoc.com' => 'Makati'
+                                        ];
+                                        if (isset($branchAdminLabels[$authorEmail])) {
+                                            $posterName = 'I Heart Dentist Dental Clinic - ' . $branchAdminLabels[$authorEmail];
+                                        } else {
+                                            $posterName = 'I Heart Dentist Dental Clinic';
+                                        }
+                                    } else {
+                                        $posterName = $post['docname'];
+                                    }
                                    
                                     $content = htmlspecialchars($post['content']);
                                     $isLong = strlen($content) > 400;
@@ -366,13 +441,26 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                                     $postType = isset($post['docid']) ? 'dentist' : 'admin';
                                     $postId = $post['pk'] ?? null;
                                     if ($postId) {
-                                        echo '<div class="announcement-actions">';
-                                        echo '<form method="POST" action="delete_post.php" onsubmit="return confirm(\'Are you sure you want to delete this announcement?\');">';
-                                        echo '<input type="hidden" name="post_id" value="' . intval($postId) . '">';
-                                        echo '<input type="hidden" name="post_type" value="' . htmlspecialchars($postType) . '">';
-                                        echo '<button type="submit" class="delete-post-btn">Delete</button>';
-                                        echo '</form>';
-                                        echo '</div>';
+                                        // By default allow deletion
+                                        $canDelete = true;
+                                        // If this is an admin post authored by admin@edoc.com,
+                                        // do not allow adminbacoor to delete it
+                                            if ($postType === 'admin') {
+                                            $authorEmail = isset($post['aemail']) ? $post['aemail'] : '';
+                                            // Prevent branch-restricted admins from deleting central admin's posts
+                                            if (isset($_SESSION['user']) && in_array($_SESSION['user'], ['adminbacoor@edoc.com','adminmakati@edoc.com']) && strcasecmp($authorEmail, 'admin@edoc.com') === 0) {
+                                                $canDelete = false;
+                                            }
+                                        }
+                                        if ($canDelete) {
+                                            echo '<div class="announcement-actions">';
+                                            echo '<form method="POST" action="delete_post.php" onsubmit="return confirm(\'Are you sure you want to delete this announcement?\');">';
+                                            echo '<input type="hidden" name="post_id" value="' . intval($postId) . '">';
+                                            echo '<input type="hidden" name="post_type" value="' . htmlspecialchars($postType) . '">';
+                                            echo '<button type="submit" class="delete-post-btn">Delete</button>';
+                                            echo '</form>';
+                                            echo '</div>';
+                                        }
                                     }
 
 
@@ -515,6 +603,10 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
+                            $branchScope = '';
+                            if ($restrictedBranchId > 0) {
+                                $branchScope = " AND (doctor.branch_id = $restrictedBranchId OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+                            }
                             $upcomingAppointments = $database->query("
                                 SELECT
                                     appointment.appoid,
@@ -522,36 +614,47 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
                                     doctor.docname AS dentist_name,
                                     appointment.appodate,
                                     appointment.appointment_time,
-                                    procedures.procedure_name
+                                    procedures.procedure_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN doctor ON appointment.docid = doctor.docid
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN patient ON appointment.pid = patient.pid
+                                LEFT JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
                                     AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
+                                    $branchScope
+                                ORDER BY appointment.appodate ASC, appointment.appointment_time ASC
                             ");
 
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['dentist_name']) . '</p>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                            htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                            ' • ' .
-                                            htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $pname = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $dname = htmlspecialchars($appointment['dentist_name'] ?? '');
+                                    $proc = htmlspecialchars($appointment['procedure_name'] ?? '');
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+
+                                    $html = '<div class="appointment-item">';
+                                    $html .= '<h4 class="appointment-type">' . $pname . '</h4>';
+                                    $html .= '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $html .= '<p class="appointment-date">' . $proc . '</p>';
+                                    $suffix = ($branch !== '') ? (' - ' . $branch) : '';
+                                    $html .= '<p class="appointment-date">' . $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str . $suffix . '</p>';
+                                    $html .= '</div>';
+                                    echo $html;
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                </div>';
+                                echo '<div class="no-appointments"><p>No upcoming appointments scheduled</p></div>';
                             }
                             ?>
                         </div>
@@ -566,6 +669,46 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
         // Script for clear button in search
         document.querySelector('.clear-btn').addEventListener('click', function () {
             document.querySelector('input[name="search"]').value = '';
+        });
+    </script>
+
+    <script>
+        // Mobile sidebar toggle
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburger = document.getElementById('hamburgerAdmin');
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (hamburger && sidebar && overlay) {
+                const closeSidebar = () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('visible');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                };
+
+                const openSidebar = () => {
+                    sidebar.classList.add('open');
+                    overlay.classList.add('visible');
+                    hamburger.setAttribute('aria-expanded', 'true');
+                };
+
+                hamburger.addEventListener('click', function () {
+                    if (sidebar.classList.contains('open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+
+                overlay.addEventListener('click', function () {
+                    closeSidebar();
+                });
+
+                // Close on ESC
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeSidebar();
+                });
+            }
         });
     </script>
 
@@ -660,6 +803,7 @@ $sortOrder = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'ASC' : 'DESC'
             }
         }
     </script>
+<!-- Sidebar toggle logic moved to partial -->
 </body>
 
 

@@ -2,7 +2,7 @@
 // send_reminders.php
 // Run this script via scheduled task every hour (or daily) to send appointment reminders.
 
-require 'database_connection.php';
+require __DIR__ . '/database_connection.php';
 require __DIR__ . '/../../vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -28,13 +28,14 @@ $createTableSql = "CREATE TABLE IF NOT EXISTS appointment_reminders (
 $con->query($createTableSql);
 
 $now_ts = time();
+$now_day = date('Y-m-d', $now_ts);
 
 // Fetch upcoming appointments in the next 26 hours (cover both 24h and 2h windows)
 $stmt = $con->prepare("SELECT a.appoid, a.pid, a.docid, a.appodate, a.appointment_time, p.pname, p.pemail, d.docname, d.docemail, pr.procedure_name
     FROM appointment a
     JOIN patient p ON a.pid = p.pid
     JOIN doctor d ON a.docid = d.docid
-    JOIN procedures pr ON a.procedure_id = pr.procedure_id
+    LEFT JOIN procedures pr ON a.procedure_id = pr.procedure_id
     WHERE a.status = 'appointment' AND CONCAT(a.appodate, ' ', a.appointment_time) BETWEEN ? AND ?");
 $startWindow = date('Y-m-d H:i:s', $now_ts);
 $endWindow = date('Y-m-d H:i:s', $now_ts + 60*60*26); // next 26 hours
@@ -63,6 +64,13 @@ if ($res && $res->num_rows > 0) {
             $toSend[] = '2h';
         }
 
+        // Same-day sweep: send a reminder once for appointments later today
+        // Useful when running manually or when windows were missed.
+        $appt_day = date('Y-m-d', $appt_ts);
+        if ($appt_day === $now_day && $diff_seconds > 0) {
+            $toSend[] = 'day';
+        }
+
         if (empty($toSend)) continue;
 
         foreach ($toSend as $rtype) {
@@ -77,8 +85,12 @@ if ($res && $res->num_rows > 0) {
             // Prepare message variant
             $appt_dt = date('F j, Y', $appt_ts);
             $appt_time = date('g:i A', $appt_ts);
-            $title = ($rtype === '24h') ? 'Appointment Reminder — 24 hours' : 'Appointment Reminder — 2 hours';
-            $message = "Reminder: Your appointment for {$row['procedure_name']} with Dr. {$row['docname']} is on {$appt_dt} at {$appt_time}. (This is your {$title} reminder)";
+            $title = (
+                $rtype === '24h' ? 'Appointment Reminder — 24 hours' : (
+                $rtype === '2h' ? 'Appointment Reminder — 2 hours' : 'Appointment Reminder — Today')
+            );
+            $procName = !empty($row['procedure_name']) ? $row['procedure_name'] : 'your appointment';
+            $message = "Reminder: {$procName} with Dr. {$row['docname']} is on {$appt_dt} at {$appt_time}. (This is your {$title} reminder)";
 
             // Insert notification for the patient
             $ins = $con->prepare("INSERT INTO notifications (user_id, user_type, title, message, related_id, related_type, created_at, is_read)
@@ -103,7 +115,7 @@ if ($res && $res->num_rows > 0) {
 
                 $mail->isHTML(true);
                 $mail->Subject = $title;
-                $mail->Body = "\n                    <h3>{$title}</h3>\n                    <p>Dear {$row['pname']},</p>\n                    <p>This is a reminder for your upcoming appointment:</p>\n                    <ul>\n                        <li><strong>Procedure:</strong> {$row['procedure_name']}</li>\n                        <li><strong>Dentist:</strong> Dr. {$row['docname']}</li>\n                        <li><strong>Date:</strong> {$appt_dt}</li>\n                        <li><strong>Time:</strong> {$appt_time}</li>\n                    </ul>\n                    <p>Please arrive 10 minutes early. Reply to this email or call us to reschedule.</p>\n                    <p>Thank you,<br/>I Heart Dentist Dental Clinic</p>\n                ";
+                $mail->Body = "\n                    <h3>{$title}</h3>\n                    <p>Dear {$row['pname']},</p>\n                    <p>This is a reminder for your upcoming appointment:</p>\n                    <ul>\n                        " . (!empty($row['procedure_name']) ? "<li><strong>Procedure:</strong> {$row['procedure_name']}</li>" : "") . "\n                        <li><strong>Dentist:</strong> Dr. {$row['docname']}</li>\n                        <li><strong>Date:</strong> {$appt_dt}</li>\n                        <li><strong>Time:</strong> {$appt_time}</li>\n                    </ul>\n                    <p>Please arrive 10 minutes early. Reply to this email or call us to reschedule.</p>\n                    <p>Thank you,<br/>I Heart Dentist Dental Clinic</p>\n                ";
 
                 $mail->send();
 

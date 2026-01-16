@@ -30,14 +30,11 @@ $notifications = $database->query("SELECT * FROM notifications WHERE user_id = '
 
 // Get totals for right sidebar
 $doctorrow = $database->query("select * from doctor where status='active';");
-$appointmentrow = $database->query("select * from appointment where status='booking' AND pid='$userid';");
+// Only count confirmed bookings for patient-facing "My Bookings" summary.
+$appointmentrow = $database->query("select * from appointment where status = 'booking' AND pid='$userid';");
 $schedulerow = $database->query("select * from appointment where status='appointment' AND pid='$userid';");
 
-// Load branches for filter
-$branchesResult = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
-
-// Branch filter via GET
-$selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : 0;
+// Branch filter removed for consistency with My Appointments
 
 // Pagination
 $results_per_page = 10;
@@ -67,8 +64,8 @@ $sqlmain = "SELECT
             b.name AS branch_name
         FROM appointment
         INNER JOIN doctor ON appointment.docid = doctor.docid
-        INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-        LEFT JOIN branches b ON doctor.branch_id = b.id
+        LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+        LEFT JOIN branches b ON appointment.branch_id = b.id
         WHERE appointment.pid = '$userid' AND appointment.status = 'booking'";
 
 if ($_POST) {
@@ -83,12 +80,8 @@ if (isset($_GET['search'])) {
     $sqlmain .= " AND (doctor.docname LIKE '%$search%' OR procedures.procedure_name LIKE '%$search%')";
 }
 
-// Apply branch filter
-if ($selected_branch > 0) {
-    $sqlmain .= " AND doctor.branch_id = $selected_branch";
-}
-
-$sqlmain .= " ORDER BY appointment.appodate ASC LIMIT $start_from, $results_per_page";
+// Sort by upcoming date/time (soonest first)
+$sqlmain .= " ORDER BY appointment.appodate ASC, appointment.appointment_time ASC LIMIT $start_from, $results_per_page";
 $result = $database->query($sqlmain);
 
 // Count query for pagination
@@ -132,6 +125,8 @@ if (isset($_GET['status'])) {
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/overrides.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>My Booking - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
     <style>
@@ -193,8 +188,10 @@ if (isset($_GET['status'])) {
 </head>
 
 <body>
+    <button class="hamburger-admin show-mobile" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -202,7 +199,8 @@ if (isset($_GET['status'])) {
             <div class="user-profile">
                 <div class="profile-image">
                     <?php
-                    $profile_pic = isset($userfetch['profile_pic']) ? $userfetch['profile_pic'] : '../Media/Icon/Blue/profile.png';
+                    include_once __DIR__ . '/../inc/get_profile_pic.php';
+                    $profile_pic = get_profile_pic($userfetch);
                     ?>
                     <img src="../<?php echo $profile_pic; ?>" alt="Profile" class="profile-img">
                 </div>
@@ -286,18 +284,7 @@ if (isset($_GET['status'])) {
                                 <?php endif; ?>
                             </form>
                             
-                            <!-- Branch filter (GET) -->
-                            <form action="" method="GET" style="display:inline-block; margin-left:12px;">
-                                <input type="hidden" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
-                                <select name="branch_id" onchange="this.form.submit()" class="input-text" style="padding:6px; margin-left:8px;">
-                                    <option value="">All Branches</option>
-                                    <?php if ($branchesResult && $branchesResult->num_rows > 0): ?>
-                                        <?php while ($b = $branchesResult->fetch_assoc()): ?>
-                                            <option value="<?php echo $b['id']; ?>" <?php echo ($selected_branch == $b['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($b['name']); ?></option>
-                                        <?php endwhile; ?>
-                                    <?php endif; ?>
-                                </select>
-                            </form>
+                            <!-- Branch filter dropdown removed -->
                         </div>
                     </div>
 
@@ -309,7 +296,7 @@ if (isset($_GET['status'])) {
                                         <th>Profile</th>
                                         <th>Dentist</th>
                                         <th>Branch</th>
-                                        <th>Procedure</th>
+                                            <th>Status</th>
                                         <th>Date & Time</th>
                                         <th>Actions</th>
                                     </tr>
@@ -335,14 +322,22 @@ if (isset($_GET['status'])) {
                                                 <div class="cell-text"><?php echo $row['docname']; ?></div>
                                             </td>
 
-                                            <!-- Procedure Column -->
-                                            <td>
-                                                <div class="cell-text"><?php echo $row['procedure_name']; ?></div>
-                                            </td>
-
-                                            <!-- Branch Column -->
+                                            <!-- Branch Column (fixed position to match header) -->
                                             <td>
                                                 <div class="cell-text"><?php echo isset($row['branch_name']) ? htmlspecialchars($row['branch_name']) : '-'; ?></div>
+                                            </td>
+
+                                            <!-- Status / Procedure Placeholder -->
+                                            <td>
+                                                <div class="cell-text">
+                                                <?php
+                                                  if ($row['status'] === 'pending_reservation') {
+                                                      echo 'Pending Payment';
+                                                  } else {
+                                                      echo ($row['procedure_name']) ? 'Pending Evaluation' : 'Pending Evaluation';
+                                                  }
+                                                ?>
+                                                </div>
                                             </td>
 
                                             <!-- Date & Time Column -->
@@ -356,10 +351,16 @@ if (isset($_GET['status'])) {
 
                                             <!-- Actions Column -->
                                             <td>
-                                                <a href="?action=drop&id=<?php echo $row['appoid']; ?>&doc=<?php echo urlencode($row['docname']); ?>"
-                                                    class="non-style-link">
-                                                    <center><button class="action-btn remove-btn">Cancel</button></center>
-                                                </a>
+                                                <div style="display:flex;gap:8px;align-items:center;justify-content:center;">
+                                                    <a href="?action=drop&id=<?php echo $row['appoid']; ?>&doc=<?php echo urlencode($row['docname']); ?>" class="non-style-link">
+                                                        <button class="action-btn remove-btn">Cancel</button>
+                                                    </a>
+
+                                                    <!-- View Receipt button opens a printable receipt in a new tab -->
+                                                    <a href="receipt.php?appoid=<?php echo $row['appoid']; ?>" target="_blank" class="non-style-link">
+                                                        <button class="action-btn view-receipt-btn">View Receipt</button>
+                                                    </a>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
@@ -527,38 +528,54 @@ if (isset($_GET['status'])) {
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
-                                    appointment.appoid,
-                                    procedures.procedure_name,
-                                    appointment.appodate,
-                                    appointment.appointment_time
-                                FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                WHERE
-                                    appointment.pid = '$userid'
-                                    AND appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
-                            ");
+                            $sql = "SELECT
+                                        a.appoid,
+                                        COALESCE(GROUP_CONCAT(DISTINCT p.procedure_name ORDER BY p.procedure_name SEPARATOR ', '), '') AS procedure_names,
+                                        a.appodate,
+                                        a.appointment_time,
+                                        d.docname as doctor_name,
+                                        b.name AS branch_name
+                                    FROM appointment a
+                                    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                    LEFT JOIN procedures p ON ap.procedure_id = p.procedure_id
+                                    LEFT JOIN doctor d ON a.docid = d.docid
+                                    LEFT JOIN branches b ON a.branch_id = b.id
+                                    WHERE
+                                        a.pid = '$userid'
+                                        AND a.status = 'appointment'
+                                        AND a.appodate >= '$today'
+                                    GROUP BY a.appoid
+                                    ORDER BY a.appodate ASC, a.appointment_time ASC
+                                    LIMIT 3";
+
+                            $upcomingAppointments = $database->query($sql);
 
                             if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['procedure_name']) . '</h4>
-                                        <p class="appointment-date">' .
-                                        htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                        ' • ' .
-                                        htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $proc = htmlspecialchars($appointment['procedure_names'] ?? 'No procedure assigned');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '-');
+
+                                    echo '<div class="appointment-item">';
+                                    echo '<h4 class="appointment-type">' . $proc . '</h4>';
+                                    echo '<p class="appointment-dentist">With Dr. ' . $dname . '</p>';
+                                    $datetime = $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str;
+                                    if ($branch && $branch !== '-') {
+                                        $datetime .= ' - ' . $branch;
+                                    }
+                                    echo '<p class="appointment-date">' . $datetime . '</p>';
+                                    echo '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>
-                                </div>';
+                                echo '<div class="no-appointments">                                    <p>No upcoming appointments scheduled</p>                                    <a href="calendar/calendar.php" class="schedule-btn">Schedule an appointment</a>                                </div>';
                             }
                             ?>
                         </div>
@@ -585,26 +602,27 @@ if (isset($_GET['status'])) {
 
             echo '
             <div id="popup1" class="overlay">
-                <div class="popup">
-                    <center>
-                        <h2>Confirm Cancellation</h2>
-                        <a class="close" href="my_booking.php">&times;</a>
-                        <div class="content" style="height: 100px; width: 420px;">
-                            Are you sure you want to cancel this booking?<br><br>
-                        </div>
-                        <div style="display: flex;justify-content: center;">
-                            <a href="cancel_appointment.php?id=' . $id . '&source=patient" class="non-style-link">
-                                <button class="btn-primary btn" style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">
-                                    <font class="tn-in-text">Yes, Cancel</font>
-                                </button>
-                            </a>&nbsp;&nbsp;&nbsp;
-                            <a href="my_booking.php" class="non-style-link">
-                                <button class="btn-primary btn" style="display: flex;justify-content: center;align-items: center;margin:10px;padding:10px;">
-                                    <font class="tn-in-text">No, Go Back</font>
-                                </button>
-                            </a>
-                        </div>
-                    </center>
+                <div class="popup" style="max-width:520px;padding:25px 30px;">
+                    <h2 style="text-align:center;margin-top:0;">Confirm Cancellation</h2>
+                    <a class="close" href="my_booking.php" aria-label="Close">&times;</a>
+                    <div class="content" style="width:100%;margin:0 0 15px 0;">
+                        <p style="margin:0 0 12px 0;font-size:15px;">Are you sure you want to cancel this booking?</p>
+                        <p style="color:#c0392b;font-size:13px;font-weight:600;margin:0;line-height:1.4;">
+                            Note: Your reservation fee is <u>non‑refundable</u>. Cancelling will forfeit this fee and cannot be reversed.
+                        </p>
+                    </div>
+                    <div style="display:flex;justify-content:center;gap:18px;flex-wrap:wrap;">
+                        <a href="cancel_appointment.php?id=' . $id . '&source=patient" class="non-style-link">
+                            <button class="btn-primary btn" style="display:flex;justify-content:center;align-items:center;margin:10px;padding:10px 22px;min-width:160px;">
+                                <span class="tn-in-text">Yes, Cancel</span>
+                            </button>
+                        </a>
+                        <a href="my_booking.php" class="non-style-link">
+                            <button class="btn-primary btn" style="display:flex;justify-content:center;align-items:center;margin:10px;padding:10px 22px;min-width:160px;">
+                                <span class="tn-in-text">No, Go Back</span>
+                            </button>
+                        </a>
+                    </div>
                 </div>
             </div>
             ';
@@ -722,6 +740,34 @@ function markAllAsRead() {
     });
 }
     </script>
+<script>
+// Mobile sidebar toggle with overlay and accessibility
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('sidebarToggle');
+    var sidebar = document.getElementById('adminSidebar');
+    var overlay = document.getElementById('sidebarOverlay');
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (toggleBtn && sidebar && overlay) {
+        toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) { closeSidebar(); } else { openSidebar(); }
+        });
+        overlay.addEventListener('click', closeSidebar);
+        document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeSidebar(); });
+    }
+});
+</script>
 </body>
 
 </html>

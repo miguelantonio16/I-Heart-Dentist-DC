@@ -11,12 +11,23 @@ if (isset($_SESSION["user"])) {
 }
 
 include("../connection.php");
+require_once __DIR__ . '/../inc/redirect_helper.php';
 
-// Get totals for right sidebar
-$doctorrow = $database->query("select * from doctor where status='active';");
-$patientrow = $database->query("select * from patient where status='active';");
-$appointmentrow = $database->query("select * from appointment where status='booking';");
-$schedulerow = $database->query("select * from appointment where status='appointment';");
+// Branch restriction (e.g., Bacoor-only admin)
+$restrictedBranchId = isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id'] ? (int)$_SESSION['restricted_branch_id'] : 0;
+
+// Get totals for right sidebar (respect branch restriction)
+if ($restrictedBranchId > 0) {
+    $doctorrow = $database->query("SELECT * FROM doctor WHERE status='active' AND (branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $patientrow = $database->query("SELECT * FROM patient WHERE status='active' AND branch_id = $restrictedBranchId;");
+    $appointmentrow = $database->query("SELECT * FROM appointment WHERE status='booking' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+    $schedulerow = $database->query("SELECT * FROM appointment WHERE status='appointment' AND docid IN (SELECT docid FROM doctor WHERE branch_id = $restrictedBranchId OR docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId));");
+} else {
+    $doctorrow = $database->query("select * from doctor where status='active';");
+    $patientrow = $database->query("select * from patient where status='active';");
+    $appointmentrow = $database->query("select * from appointment where status='booking';");
+    $schedulerow = $database->query("select * from appointment where status='appointment';");
+}
 
 // Pagination
 $results_per_page = 10;
@@ -36,6 +47,17 @@ $search = "";
 $sort_param = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 $sort_order = ($sort_param === 'oldest') ? 'DESC' : 'ASC';
 
+// Load branches for filter dropdown; restrict if needed
+if ($restrictedBranchId > 0) {
+    $branchesResult = $database->query("SELECT id, name FROM branches WHERE id = $restrictedBranchId ORDER BY name ASC");
+} else {
+    $branchesResult = $database->query("SELECT id, name FROM branches ORDER BY name ASC");
+}
+
+// Branch filter param (branch_id to match patient.php)
+$selected_branch = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : 0;
+if ($restrictedBranchId > 0) { $selected_branch = $restrictedBranchId; }
+
 // Handle patient record view
 if (isset($_GET['action'])) {
     if ($_GET['action'] == 'view' && isset($_GET['id'])) {
@@ -50,7 +72,7 @@ if (isset($_GET['action'])) {
         $patient = $patient_result->fetch_assoc();
 
         if (!$patient) {
-            header("Location: records.php?error=patient_not_found");
+            redirect_with_context('records.php', ['error' => 'patient_not_found']);
             exit();
         }
 
@@ -62,23 +84,34 @@ if (isset($_GET['action'])) {
         $medical_result = $stmt->get_result();
         $medical_history = $medical_result->fetch_assoc();
 
-        // Fetch informed consent
-        $consent_sql = "SELECT * FROM informed_consent WHERE email = ? ORDER BY consent_date DESC LIMIT 1";
-        $stmt = $database->prepare($consent_sql);
-        $stmt->bind_param("s", $patient['pemail']);
-        $stmt->execute();
-        $consent_result = $stmt->get_result();
-        $informed_consent = $consent_result->fetch_assoc();
+        // Informed consent removed from system; not fetched
     }
 }
 
 if (isset($_GET['search'])) {
     $search = $_GET['search'];
-    $query = "SELECT * FROM patient WHERE status='active' AND (pname LIKE '%$search%' OR pemail LIKE '%$search%' OR ptel LIKE '%$search%') ORDER BY pname $sort_order LIMIT $start_from, $results_per_page";
+    $query = "SELECT * FROM patient WHERE status='active' AND (pname LIKE '%$search%' OR pemail LIKE '%$search%' OR ptel LIKE '%$search%')";
+    // apply branch filter when present
+    if ($selected_branch > 0) {
+        $query .= " AND (patient.branch_id = $selected_branch OR EXISTS(SELECT 1 FROM patient_branches pb WHERE pb.pid = patient.pid AND pb.branch_id = $selected_branch) OR EXISTS(SELECT 1 FROM appointment ap WHERE ap.pid = patient.pid AND ap.branch_id = $selected_branch))";
+    }
+    $query .= " ORDER BY pname $sort_order LIMIT $start_from, $results_per_page";
+
     $count_query = "SELECT COUNT(*) as total FROM patient WHERE status='active' AND (pname LIKE '%$search%' OR pemail LIKE '%$search%' OR ptel LIKE '%$search%')";
+    if ($selected_branch > 0) {
+        $count_query .= " AND (branch_id = $selected_branch OR EXISTS(SELECT 1 FROM patient_branches pb WHERE pb.pid = patient.pid AND pb.branch_id = $selected_branch) OR EXISTS(SELECT 1 FROM appointment ap WHERE ap.pid = patient.pid AND ap.branch_id = $selected_branch))";
+    }
 } else {
-    $query = "SELECT * FROM patient WHERE status='active' ORDER BY pname $sort_order LIMIT $start_from, $results_per_page";
+    $query = "SELECT * FROM patient WHERE status='active'";
+    if ($selected_branch > 0) {
+        $query .= " AND (patient.branch_id = $selected_branch OR EXISTS(SELECT 1 FROM patient_branches pb WHERE pb.pid = patient.pid AND pb.branch_id = $selected_branch) OR EXISTS(SELECT 1 FROM appointment ap WHERE ap.pid = patient.pid AND ap.branch_id = $selected_branch))";
+    }
+    $query .= " ORDER BY pname $sort_order LIMIT $start_from, $results_per_page";
+
     $count_query = "SELECT COUNT(*) as total FROM patient WHERE status='active'";
+    if ($selected_branch > 0) {
+        $count_query .= " AND (branch_id = $selected_branch OR EXISTS(SELECT 1 FROM patient_branches pb WHERE pb.pid = patient.pid AND pb.branch_id = $selected_branch) OR EXISTS(SELECT 1 FROM appointment ap WHERE ap.pid = patient.pid AND ap.branch_id = $selected_branch))";
+    }
 }
 
 $result = $database->query($query);
@@ -107,6 +140,7 @@ $currentDay = date('j');
     <link rel="stylesheet" href="../css/admin.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/table.css">
+    <link rel="stylesheet" href="../css/responsive-admin.css">
     <title>Patient Records - IHeartDentistDC</title>
     <link rel="icon" href="../Media/Icon/logo.png" type="image/png">
 
@@ -176,6 +210,9 @@ $currentDay = date('j');
             padding-left: 30px;
         }
 
+        /* Receipt button style used in patient view */
+        .action-btn.view-receipt-btn { display:inline-block; background:#2f3670; color:#fff; padding:6px 10px; border-radius:6px; text-decoration:none; }
+
         .stats-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -196,6 +233,39 @@ $currentDay = date('j');
             height: 50px;
             border-radius: 50%;
             object-fit: cover;
+        }
+
+        /* Branch select styling to match compact pill-like UI */
+        .branch-select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid #e6e9ef;
+            background: #ffffff;
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 20px;
+            min-width: 140px;
+            box-shadow: none;
+            cursor: pointer;
+        }
+
+        /* Add a subtle down-caret using a background SVG */
+        .branch-select {
+            background-image: linear-gradient(45deg, transparent 50%, #9ca3af 50%), linear-gradient(135deg, #9ca3af 50%, transparent 50%), linear-gradient(to right, #fff, #fff);
+            background-position: calc(100% - 18px) calc(1em + 2px), calc(100% - 13px) calc(1em + 2px), 0 0;
+            background-size: 6px 6px, 6px 6px, 100% 100%;
+            background-repeat: no-repeat;
+            padding-right: 36px;
+        }
+
+        /* Slight hover/focus states */
+        .branch-select:focus {
+            border-color: #cbe4ff;
+            box-shadow: 0 0 0 3px rgba(66,153,225,0.12);
+            outline: none;
         }
 
         /* Records specific styles */
@@ -233,8 +303,12 @@ $currentDay = date('j');
 </head>
 
 <body>
+    <!-- Mobile hamburger for sidebar toggle -->
+    <button class="hamburger-admin" id="hamburgerAdmin" aria-label="Toggle sidebar" aria-controls="adminSidebar" aria-expanded="false">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <!-- sidebar toggle removed to keep sidebar static -->
     <div class="main-container">
-        <div class="sidebar">
+        <div class="sidebar" id="adminSidebar">
             <div class="sidebar-logo">
                 <img src="../Media/Icon/logo.png" alt="IHeartDentistDC Logo">
             </div>
@@ -245,7 +319,25 @@ $currentDay = date('j');
                 </div>
                 <h3 class="profile-name">I Heart Dentist Dental Clinic</h3>
                 <p style="color: #777; margin: 0; font-size: 14px; text-align: center;">
-                Secretary
+                <?php
+                    $roleLabel = 'Secretary';
+                    if (isset($_SESSION['user'])) {
+                        $curr = strtolower($_SESSION['user']);
+                        // Super Admin label for the primary admin account
+                        if ($curr === 'admin@edoc.com') {
+                            $roleLabel = 'Super Admin';
+                        } elseif (isset($_SESSION['restricted_branch_id']) && $_SESSION['restricted_branch_id']) {
+                            $branchLabels = [
+                                'adminbacoor@edoc.com' => 'Bacoor',
+                                'adminmakati@edoc.com' => 'Makati'
+                            ];
+                            if (isset($branchLabels[$curr])) {
+                                $roleLabel = 'Secretary - ' . $branchLabels[$curr];
+                            }
+                        }
+                    }
+                    echo $roleLabel;
+                ?>
                 </p>
             </div>
 
@@ -286,10 +378,12 @@ $currentDay = date('j');
                     <img src="../Media/Icon/Blue/folder.png" alt="Reports" class="nav-icon">
                     <span class="nav-label">Reports</span>
                 </a>
+                <?php if (empty($_SESSION['restricted_branch_id'])): ?>
                 <a href="settings.php" class="nav-item">
                     <img src="../Media/Icon/Blue/settings.png" alt="Settings" class="nav-icon">
                     <span class="nav-label">Settings</span>
                 </a>
+                <?php endif; ?>
             </div>
 
             <div class="log-out">
@@ -302,7 +396,7 @@ $currentDay = date('j');
 
         <div class="content-area">
             <div class="content">
-                <?php include('inc/sidebar-toggle.php'); ?>
+                <!-- Legacy sidebar-toggle removed; logo now acts as toggle -->
                 <div class="main-section">
                     <!-- search bar -->
                     <div class="search-container">
@@ -323,26 +417,42 @@ $currentDay = date('j');
                             <?php
                             $currentSort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
                             $searchParam = isset($_GET['search']) ? '&search=' . urlencode($_GET['search']) : '';
+                            $branchParam = $selected_branch ? '&branch_id=' . $selected_branch : '';
                             ?>
                             <a href="?sort=newest<?php echo $searchParam; ?>"
                                 class="filter-btn newest-btn <?php echo ($currentSort === 'newest' || $currentSort === '') ? 'active' : 'inactive'; ?>">
                                 A-Z
                             </a>
 
-                            <a href="?sort=oldest<?php echo $searchParam; ?>"
+                            <a href="?sort=oldest<?php echo $searchParam . $branchParam; ?>"
                                 class="filter-btn oldest-btn <?php echo $currentSort === 'oldest' ? 'active' : 'inactive'; ?>">
                                 Z-A
                             </a>
+                            
+                            <!-- Branch filter -->
+                            <form method="GET" style="display:inline-block; margin-left:12px;">
+                                <input type="hidden" name="search" value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
+                                <input type="hidden" name="sort" value="<?php echo htmlspecialchars($currentSort); ?>">
+                                <select name="branch_id" onchange="this.form.submit()" class="branch-select" style="margin-left:8px;">
+                                    <option value="">All Branches</option>
+                                    <?php if ($branchesResult && $branchesResult->num_rows > 0): ?>
+                                        <?php while ($b = $branchesResult->fetch_assoc()): ?>
+                                            <option value="<?php echo $b['id']; ?>" <?php echo ($selected_branch == $b['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($b['name']); ?></option>
+                                        <?php endwhile; ?>
+                                    <?php endif; ?>
+                                </select>
+                            </form>
                         </div>
                     </div>
 
                     <?php if ($result->num_rows > 0): ?>
-                        <div class="table-container">
+                        <div class="table-responsive"><div class="table-container">
                             <table class="table">
                                 <thead>
                                     <tr>
                                         <th>Profile</th>
                                         <th>Name</th>
+                                        <th>Branch</th>
                                         <th>Email</th>
                                         <th>Contact</th>
                                         <th>Date of Birth</th>
@@ -354,18 +464,38 @@ $currentDay = date('j');
                                         <tr>
                                             <td>
                                                 <?php
-                                                // Check if profile picture exists
-                                                if (!empty($row['profile_pic'])) {
-                                                    $photo = "../" . $row['profile_pic'];  // Adding ../ to the location of the photo
-                                                } else {
-                                                    $photo = "../Media/Icon/Blue/care.png"; // Default patient icon
-                                                }
+                                                include_once __DIR__ . '/../inc/get_profile_pic.php';
+                                                $profile_pic = get_profile_pic($row); // returns path without leading ../
+                                                $photo = "../" . $profile_pic;
                                                 ?>
-                                                <img src="<?php echo $photo; ?>" alt="<?php echo $row['pname']; ?>"
-                                                    class="profile-img-small">
+                                                <img src="<?php echo $photo; ?>" alt="<?php echo htmlspecialchars($row['pname']); ?>"
+                                                    class="profile-img-small" onerror="this.onerror=null;this.src='../Media/Icon/Blue/profile.png';">
                                             </td>
                                             <td>
                                                 <div class="cell-text"><?php echo $row['pname']; ?></div>
+                                            </td>
+                                            <td>
+                                                <div class="cell-text">
+                                                    <?php
+                                                    // Build multi-branch list
+                                                    $branches_list = [];
+                                                    $pbres = $database->query("SELECT b.name FROM patient_branches pb JOIN branches b ON pb.branch_id=b.id WHERE pb.pid='" . (int)$row['pid'] . "' ORDER BY b.name ASC");
+                                                    if ($pbres && $pbres->num_rows > 0) {
+                                                        while ($br = $pbres->fetch_assoc()) {
+                                                            $clean = preg_replace('/\\s*Branch$/i','', $br['name']);
+                                                            if (!in_array($clean, $branches_list)) $branches_list[] = $clean;
+                                                        }
+                                                    } elseif (!empty($row['branch_id'])) {
+                                                        // Fallback to legacy single branch
+                                                        $legacy = $database->query("SELECT name FROM branches WHERE id='" . (int)$row['branch_id'] . "' LIMIT 1");
+                                                        if ($legacy && $legacy->num_rows > 0) {
+                                                            $clean = preg_replace('/\\s*Branch$/i','', $legacy->fetch_assoc()['name']);
+                                                            $branches_list[] = $clean;
+                                                        }
+                                                    }
+                                                    echo !empty($branches_list) ? htmlspecialchars(implode(', ', $branches_list)) : '-';
+                                                    ?>
+                                                </div>
                                             </td>
                                             <td>
                                                 <div class="cell-text"><?php echo $row['pemail']; ?></div>
@@ -386,7 +516,7 @@ $currentDay = date('j');
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>
-                        </div>
+                        </div></div>
 
                         <!-- Pagination -->
                         <div class="pagination">
@@ -394,10 +524,11 @@ $currentDay = date('j');
                             $currentSort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
                             $sortParam = '&sort=' . $currentSort;
                             $searchParam = isset($_GET['search']) ? '&search=' . urlencode($_GET['search']) : '';
+                            $branchParam = $selected_branch ? '&branch_id=' . $selected_branch : '';
 
                             // Previous link
                             if ($page > 1) {
-                                echo '<a href="?page=' . ($page - 1) . $searchParam . $sortParam . '">&laquo; Previous</a>';
+                                echo '<a href="?page=' . ($page - 1) . $searchParam . $sortParam . $branchParam . '">&laquo; Previous</a>';
                             }
 
                             // Page links
@@ -405,12 +536,12 @@ $currentDay = date('j');
                             $end_page = min($total_pages, $page + 2);
 
                             for ($i = $start_page; $i <= $end_page; $i++) {
-                                echo '<a href="?page=' . $i . $searchParam . $sortParam . '"' . ($i == $page ? ' class="active"' : '') . '>' . $i . '</a>';
+                                echo '<a href="?page=' . $i . $searchParam . $sortParam . $branchParam . '"' . ($i == $page ? ' class="active"' : '') . '>' . $i . '</a>';
                             }
 
                             // Next link
                             if ($page < $total_pages) {
-                                echo '<a href="?page=' . ($page + 1) . $searchParam . $sortParam . '">Next &raquo;</a>';
+                                echo '<a href="?page=' . ($page + 1) . $searchParam . $sortParam . $branchParam . '">Next &raquo;</a>';
                             }
                             ?>
                         </div>
@@ -535,42 +666,53 @@ $currentDay = date('j');
                         <h3>Upcoming Appointments</h3>
                         <div class="appointments-content">
                             <?php
-                            $upcomingAppointments = $database->query("
-                                SELECT
+                            $branchScope = '';
+                            if (isset($restrictedBranchId) && $restrictedBranchId > 0) {
+                                $branchScope = " AND (doctor.branch_id = $restrictedBranchId OR doctor.docid IN (SELECT docid FROM doctor_branches WHERE branch_id=$restrictedBranchId))";
+                            }
+                            $upcomingAppointments = $database->query("SELECT
                                     appointment.appoid,
                                     procedures.procedure_name,
                                     appointment.appodate,
                                     appointment.appointment_time,
                                     patient.pname as patient_name,
-                                    doctor.docname as doctor_name
+                                    doctor.docname as doctor_name,
+                                    COALESCE(b.name, '') AS branch_name
                                 FROM appointment
-                                INNER JOIN procedures ON appointment.procedure_id = procedures.procedure_id
-                                INNER JOIN patient ON appointment.pid = patient.pid
-                                INNER JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN procedures ON appointment.procedure_id = procedures.procedure_id
+                                LEFT JOIN patient ON appointment.pid = patient.pid
+                                LEFT JOIN doctor ON appointment.docid = doctor.docid
+                                LEFT JOIN branches b ON doctor.branch_id = b.id
                                 WHERE
                                     appointment.status = 'appointment'
-                                    AND appointment.appodate >= '$today'
-                                ORDER BY appointment.appodate ASC
-                                LIMIT 3;
+                                    AND appointment.appodate >= '$today'" . $branchScope . "
+                                ORDER BY appointment.appodate ASC, appointment.appointment_time ASC
                             ");
 
-                            if ($upcomingAppointments->num_rows > 0) {
+                            if ($upcomingAppointments && $upcomingAppointments->num_rows > 0) {
                                 while ($appointment = $upcomingAppointments->fetch_assoc()) {
-                                    echo '<div class="appointment-item">
-                                        <h4 class="appointment-type">' . htmlspecialchars($appointment['patient_name']) . '</h4>
-                                        <p class="appointment-dentist">With Dr. ' . htmlspecialchars($appointment['doctor_name']) . '</p>
-                                        <p class="appointment-date">' . htmlspecialchars($appointment['procedure_name']) . '</p>
-                                        <p class="appointment-date">' .
-                                        htmlspecialchars(date('F j, Y', strtotime($appointment['appodate']))) .
-                                        ' • ' .
-                                        htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time']))) .
-                                        '</p>
-                                    </div>';
+                                    $pname = htmlspecialchars($appointment['patient_name'] ?? '');
+                                    $dname = htmlspecialchars($appointment['doctor_name'] ?? '');
+                                    $proc = htmlspecialchars($appointment['procedure_name'] ?? '');
+                                    $date_str = '';
+                                    $time_str = '';
+                                    if (!empty($appointment['appodate'])) {
+                                        $date_str = htmlspecialchars(date('F j, Y', strtotime($appointment['appodate'])));
+                                    }
+                                    if (!empty($appointment['appointment_time'])) {
+                                        $time_str = htmlspecialchars(date('g:i A', strtotime($appointment['appointment_time'])));
+                                    }
+
+                                    $branch = htmlspecialchars($appointment['branch_name'] ?? '');
+                                    echo '<div class="appointment-item">' .
+                                        '<h4 class="appointment-type">' . $pname . '</h4>' .
+                                        '<p class="appointment-dentist">With Dr. ' . $dname . '</p>' .
+                                        '<p class="appointment-date">' . $proc . '</p>' .
+                                        '<p class="appointment-date">' . $date_str . ($date_str && $time_str ? ' • ' : '') . $time_str . (($branch!=='') ? (' - ' . $branch) : '') . '</p>' .
+                                    '</div>';
                                 }
                             } else {
-                                echo '<div class="no-appointments">
-                                    <p>No upcoming appointments scheduled</p>
-                                </div>';
+                                echo '<div class="no-appointments"><p>No upcoming appointments scheduled</p></div>';
                             }
                             ?>
                         </div>
@@ -626,125 +768,84 @@ $currentDay = date('j');
                                     </div>
 
                                     <div class="record-section">
-                                        <h3>Medical History</h3>
-                                        <?php if ($medical_history): ?>
-                                            <div class="record-row">
-                                                <span class="record-label">In Good Health:</span>
-                                                <span><?php echo $medical_history['good_health']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Under Medical Treatment:</span>
-                                                <span><?php echo $medical_history['under_treatment']; ?></span>
-                                                <?php if ($medical_history['under_treatment'] == 'Yes'): ?>
-                                                    <div style="margin-left: 250px;">
-                                                        <?php echo $medical_history['condition_treated']; ?>
-                                                    </div>
+                                        <h3>Past Appointments</h3>
+                                        <?php
+                                            // Pagination parameters for past appointments
+                                            $past_page = isset($_GET['past_page']) ? max(1, intval($_GET['past_page'])) : 1;
+                                            $past_page_size = 5; // items per page
+                                            $pid_safe = intval($patient['pid']);
+                                            // Total count of completed appointments
+                                            $past_count_res = $database->query("SELECT COUNT(*) AS cnt FROM appointment WHERE pid = $pid_safe AND status='completed'");
+                                            $past_total = ($past_count_res && $past_count_res->num_rows) ? intval($past_count_res->fetch_assoc()['cnt']) : 0;
+                                            $past_total_pages = $past_total > 0 ? ceil($past_total / $past_page_size) : 1;
+                                            if ($past_page > $past_total_pages) { $past_page = $past_total_pages; }
+                                            $past_offset = ($past_page - 1) * $past_page_size;
+                                            // Page query
+                                            // Exclude discount procedure names from the displayed procedure list
+                                            $past_q_sql = "SELECT a.appoid, a.appodate, a.appointment_time, a.status,
+                                                                        COALESCE(
+                                                                            NULLIF(GROUP_CONCAT(DISTINCT CASE WHEN ap_proc.procedure_name NOT IN ('PWD Discount','Senior Citizen Discount') THEN ap_proc.procedure_name END ORDER BY ap_proc.procedure_name SEPARATOR ', '), ''),
+                                                                            NULLIF((SELECT GROUP_CONCAT(DISTINCT CASE WHEN apa.procedure_name NOT IN ('PWD Discount','Senior Citizen Discount') THEN apa.procedure_name END ORDER BY apa.procedure_name SEPARATOR ', ')
+                                                                                    FROM appointment_procedures_archive apa
+                                                                                    WHERE apa.appointment_id = a.appoid), ''),
+                                                                            (SELECT procedure_name FROM procedures WHERE procedure_id = a.procedure_id AND procedure_name NOT IN ('PWD Discount','Senior Citizen Discount') LIMIT 1)
+                                                                        ) AS procedures,
+                                                                        d.docname
+                                                                        FROM appointment a
+                                                                        LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+                                                                        LEFT JOIN procedures ap_proc ON ap.procedure_id = ap_proc.procedure_id
+                                                                        LEFT JOIN doctor d ON a.docid = d.docid
+                                                                        WHERE a.pid = $pid_safe AND a.status = 'completed'
+                                                                        GROUP BY a.appoid
+                                                                        ORDER BY a.appodate DESC, a.appointment_time DESC
+                                                                        LIMIT $past_page_size OFFSET $past_offset";
+                                            $past_q = $database->query($past_q_sql);
+                                        ?>
+                                        <?php if ($past_q && $past_q->num_rows > 0): ?>
+                                            <?php $total = $past_q->num_rows; $i = 0; while ($appt = $past_q->fetch_assoc()): $i++; ?>
+                                                <div class="record-row">
+                                                    <span class="record-label">Date:</span>
+                                                    <span><?php echo htmlspecialchars(date('F j, Y', strtotime($appt['appodate']))); ?></span>
+                                                </div>
+                                                <div class="record-row">
+                                                    <span class="record-label">Time:</span>
+                                                    <span><?php echo htmlspecialchars(date('g:i A', strtotime($appt['appointment_time']))); ?></span>
+                                                </div>
+                                                <div class="record-row">
+                                                    <span class="record-label">Procedure:</span>
+                                                    <span><?php echo htmlspecialchars($appt['procedures'] ?: 'N/A'); ?></span>
+                                                </div>
+                                                <div class="record-row">
+                                                    <span class="record-label">Dentist:</span>
+                                                    <span><?php echo htmlspecialchars($appt['docname'] ?: 'N/A'); ?></span>
+                                                </div>
+                                                <div class="record-row" style="margin-bottom:12px;">
+                                                    <span class="record-label">Status:</span>
+                                                    <span><?php echo htmlspecialchars(ucfirst($appt['status'])); ?></span>
+                                                </div>
+                                                <div style="margin-bottom:10px;">
+                                                    <?php $appoid = (int)$appt['appoid']; ?>
+                                                    <a href="../patient/receipt.php?appoid=<?php echo $appoid; ?>" target="_blank" class="action-btn view-receipt-btn">View Receipt</a>
+                                                </div>
+                                                <?php if ($i < $total): ?>
+                                                    <div class="past-appt-separator"></div>
                                                 <?php endif; ?>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Serious Illness/Surgery:</span>
-                                                <span><?php echo $medical_history['serious_illness']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Hospitalized:</span>
-                                                <span><?php echo $medical_history['hospitalized']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Taking Medication:</span>
-                                                <span><?php echo $medical_history['medication']; ?></span>
-                                                <?php if ($medical_history['medication'] == 'Yes'): ?>
-                                                    <div style="margin-left: 250px;">
-                                                        <?php echo $medical_history['medication_specify']; ?>
-                                                    </div>
+                                            <?php endwhile; ?>
+                                            <div class="past-appt-pagination">
+                                                <?php if ($past_page > 1): ?>
+                                                    <a class="page-link" href="records.php?action=view&id=<?php echo $patient['pid']; ?>&past_page=<?php echo $past_page - 1; ?>">&laquo; Prev</a>
                                                 <?php endif; ?>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Tobacco Use:</span>
-                                                <span><?php echo $medical_history['tobacco']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Recreational Drug Use:</span>
-                                                <span><?php echo $medical_history['drugs']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Allergies:</span>
-                                                <span><?php echo $medical_history['allergies'] ? $medical_history['allergies'] : 'None reported'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Blood Pressure:</span>
-                                                <span><?php echo $medical_history['blood_pressure'] ? $medical_history['blood_pressure'] : 'Not recorded'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Bleeding Time:</span>
-                                                <span><?php echo $medical_history['bleeding_time'] ? $medical_history['bleeding_time'] : 'Not recorded'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Other Health Conditions:</span>
-                                                <span><?php echo $medical_history['health_conditions'] ? $medical_history['health_conditions'] : 'None reported'; ?></span>
+                                                <span class="page-status">Page <?php echo $past_page; ?> of <?php echo $past_total_pages; ?></span>
+                                                <?php if ($past_page < $past_total_pages): ?>
+                                                    <a class="page-link" href="records.php?action=view&id=<?php echo $patient['pid']; ?>&past_page=<?php echo $past_page + 1; ?>">Next &raquo;</a>
+                                                <?php endif; ?>
                                             </div>
                                         <?php else: ?>
-                                            <p>No medical history recorded for this patient.</p>
+                                            <p>No past completed appointments found.</p>
                                         <?php endif; ?>
                                     </div>
 
-                                    <div class="record-section">
-                                        <h3>Informed Consent</h3>
-                                        <?php if ($informed_consent): ?>
-                                            <div class="record-row">
-                                                <span class="record-label">Consent Date:</span>
-                                                <span><?php echo $informed_consent['consent_date']; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Treatment to be Done:</span>
-                                                <span><?php echo $informed_consent['initial_treatment_to_be_done'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Drugs/Medications:</span>
-                                                <span><?php echo $informed_consent['initial_drugs_medications'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Changes to Treatment Plan:</span>
-                                                <span><?php echo $informed_consent['initial_changes_treatment_plan'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Radiographs (X-rays):</span>
-                                                <span><?php echo $informed_consent['initial_radiograph'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Removal of Teeth:</span>
-                                                <span><?php echo $informed_consent['initial_removal_teeth'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Crowns/Bridges:</span>
-                                                <span><?php echo $informed_consent['initial_crowns_bridges'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Endodontics (Root Canal):</span>
-                                                <span><?php echo $informed_consent['initial_endodontics'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Periodontal Disease Treatment:</span>
-                                                <span><?php echo $informed_consent['initial_periodontal_disease'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Fillings:</span>
-                                                <span><?php echo $informed_consent['initial_fillings'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <div class="record-row">
-                                                <span class="record-label">Dentures:</span>
-                                                <span><?php echo $informed_consent['initial_dentures'] == 'y' ? 'Agreed' : 'Not agreed'; ?></span>
-                                            </div>
-                                            <?php if ($informed_consent['id_signature_path']): ?>
-                                                <div class="record-row">
-                                                    <span class="record-label">Signature:</span>
-                                                    <img src="<?php echo $informed_consent['id_signature_path']; ?>"
-                                                        alt="Patient Signature" class="signature-image">
-                                                </div>
-                                            <?php endif; ?>
-                                        <?php else: ?>
-                                            <p>No informed consent recorded for this patient.</p>
-                                        <?php endif; ?>
-                                    </div>
+                                    <!-- Informed Consent section removed -->
                                 </td>
                             </tr>
                             <tr>
@@ -784,6 +885,44 @@ $currentDay = date('j');
                     if (e.target === this) {
                         window.location.href = 'records.php';
                     }
+                });
+            }
+        });
+    </script>
+    <script>
+        // Mobile sidebar toggle for Records page
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburger = document.getElementById('hamburgerAdmin');
+            const sidebar = document.getElementById('adminSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (hamburger && sidebar && overlay) {
+                const closeSidebar = () => {
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('visible');
+                    hamburger.setAttribute('aria-expanded', 'false');
+                };
+
+                const openSidebar = () => {
+                    sidebar.classList.add('open');
+                    overlay.classList.add('visible');
+                    hamburger.setAttribute('aria-expanded', 'true');
+                };
+
+                hamburger.addEventListener('click', function () {
+                    if (sidebar.classList.contains('open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+
+                overlay.addEventListener('click', function () {
+                    closeSidebar();
+                });
+
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') closeSidebar();
                 });
             }
         });

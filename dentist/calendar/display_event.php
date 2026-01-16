@@ -24,6 +24,9 @@ $dentist_name = $dentist_row['docname'];  // Get dentist name
 $selected_date = isset($_GET['selected_date']) ? $_GET['selected_date'] : null;
 
 // Build the query to get all appointments assigned to this dentist
+// Ensure past appointments are marked completed for visibility on calendar
+mysqli_query($con, "UPDATE appointment SET status = 'completed' WHERE docid = '" . mysqli_real_escape_string($con, $dentist_id) . "' AND appodate < CURDATE() AND status IN ('appointment','booking')");
+
 $display_query = "
     SELECT 
         a.appoid, 
@@ -32,19 +35,26 @@ $display_query = "
         a.event_name, 
         a.pid, 
         a.status,
-        p.procedure_name, 
+        COALESCE(
+            GROUP_CONCAT(DISTINCT pr2.procedure_name ORDER BY pr2.procedure_name SEPARATOR ', '),
+            p.procedure_name
+        ) AS procedure_name,
         pt.pname AS patient_name
     FROM appointment a
     LEFT JOIN procedures p ON a.procedure_id = p.procedure_id
+    LEFT JOIN appointment_procedures ap ON a.appoid = ap.appointment_id
+    LEFT JOIN procedures pr2 ON ap.procedure_id = pr2.procedure_id
     LEFT JOIN patient pt ON a.pid = pt.pid
     WHERE a.docid = '$dentist_id' 
-    AND a.status IN ('booking', 'appointment')
+    AND a.status IN ('booking', 'appointment', 'completed')
 ";
 
 // If a selected date is provided, add a condition to filter by the appodate
 if ($selected_date) {
-    $display_query .= " AND a.appodate = '$selected_date'";  // Filter by selected date
+    $display_query .= " AND a.appodate = '" . mysqli_real_escape_string($con, $selected_date) . "'";  // Filter by selected date
 }
+
+$display_query .= " GROUP BY a.appoid";
 
 $results = mysqli_query($con, $display_query);   
 $count = mysqli_num_rows($results);  
@@ -69,9 +79,21 @@ if ($count > 0) {
             $booked_times[] = $appointment_row['appointment_time']; // Collect booked times
         }
 
+        // Build normalized title: remove leading "My ", rename "Patient's Choice" -> "Patient Preference",
+        // and prefix by booking/appointment/completed to make status explicit.
+        $rawEvent = $data_row['event_name'] ?? '';
+        $normEvent = preg_replace('/^My\s+/i', '', $rawEvent);
+        $normEvent = str_ireplace(["Patient's Choice", "Patients Choice", "Patient Choice"], 'Patient Preference', $normEvent);
+        $statusLabel = ucfirst($data_row['status']);
+        if (in_array($data_row['status'], ['booking','pending_reservation'])) $statusLabel = 'Booking';
+        elseif ($data_row['status'] === 'appointment') $statusLabel = 'Appointment';
+        elseif ($data_row['status'] === 'completed') $statusLabel = 'Completed';
+
+        $titleLabel = $statusLabel . ': ' . $data_row['patient_name'];
+
         // Add event data to response
         $data_arr[$i]['appointment_id'] = $data_row['appoid'];
-        $data_arr[$i]['title'] = $data_row['event_name'] . " with " . $data_row['patient_name']; // Display patient name
+        $data_arr[$i]['title'] = $titleLabel;
         $data_arr[$i]['start'] = date("Y-m-d H:i:s", strtotime($data_row['appodate'] . ' ' . $data_row['appointment_time']));
         $data_arr[$i]['end'] = date("Y-m-d H:i:s", strtotime($data_row['appodate'] . ' ' . $data_row['appointment_time']));
         $data_arr[$i]['status'] = $data_row['status']; // Add the status to the event data
@@ -80,13 +102,6 @@ if ($count > 0) {
         $data_arr[$i]['procedure_name'] = $data_row['procedure_name'];  // Add procedure name
         $data_arr[$i]['patient_name'] = $data_row['patient_name'];      // Add patient name
         $data_arr[$i]['dentist_name'] = $dentist_name;                 // Add dentist name
-
-        // Set the color based on the status
-        if ($data_row['status'] == 'appointment') {
-            $data_arr[$i]['color'] = 'blue'; // Color for "appointment"
-        } else {
-            $data_arr[$i]['color'] = '#' . substr(uniqid(), -6); // Random color
-        }
 
         $data_arr[$i]['booked_times'] = $booked_times;  // Include booked times for this dentist and date
         
