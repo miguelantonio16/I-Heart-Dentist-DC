@@ -19,10 +19,11 @@ The project utilizes the **WAMP stack** to manage the server-side logic and data
 
 ## 👤 Developer
 **Miguel Antonio Barcala**
-**, **
+and 
 **Grycen Jyle Magahis**
 IT Student | De La Salle University – Dasmariñas
 Specializing in Backend Development and System Architecture
+
 
 
 
